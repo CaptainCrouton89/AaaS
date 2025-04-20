@@ -1,0 +1,96 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# AaaS (Agent as a Service) Development Guidelines
+
+This document outlines key rules, architecture insights, and best practices for developing within the AaaS project.
+
+## Architecture Overview
+
+AaaS follows a clean architecture pattern with separation of concerns:
+
+- **Controllers**: Handle HTTP requests/responses and input validation
+- **Services**: Implement business logic, independent of request/response format
+- **Repositories**: Manage data access and persistence
+- **Tools**: Implement agent capabilities as asynchronous operations
+
+## Package Management
+
+- Use pnpm for all dependency management
+
+## Server Configuration
+
+- The application runs on port 3800 by default
+- Required environment variables:
+  - `PORT`: Server port (default: 3800)
+  - `REDIS_HOST`: Redis server host
+  - `REDIS_PORT`: Redis server port
+  - `API_BASE_URL`: Base URL for API (used for webhook callbacks)
+  - `URL`: Public-facing URL for the service
+
+## Development Best Practices
+
+### Asynchronous Processing
+
+- Leverage the Bull queue for asynchronous tool execution
+- Each tool should:
+  1. Extend the `BaseAsyncJobTool` class
+  2. Implement the `execute` method for actual processing
+  3. Provide a synchronous wrapper via `getSynchronousTool`
+  4. Register with the tool registry
+- Verify that webhook callbacks correctly trigger simulated user messages via:
+  ```
+  POST /api/agents/:agentId/webhook/:toolName/:toolCallId
+  ```
+
+### State Management
+
+- Agent conversation state is maintained through:
+  - Redis for active sessions (fast access)
+  - Supabase for persistent storage
+- Message history validation and repair is handled automatically
+
+### Monitoring and Debugging
+
+- Use the Bull Board interface (accessible at `/admin/queues`) to monitor job processing
+- Common debugging endpoints:
+  - GET `/api/jobs` - View all jobs in the queue
+  - GET `/api/agents/:id/messages` - View agent message history
+
+### Error Handling
+
+- Use the `asyncHandler` middleware for route handlers to properly catch and process errors
+- Service methods should throw specific errors for handling by controllers
+- Repository methods should handle and log database errors
+
+### Creating New Tools
+
+1. Create a new tool class in `src/tools/async-tools/`
+2. Extend `BaseAsyncJobTool` and implement required methods
+3. Register the tool with the tool registry
+4. Update any relevant documentation
+
+## Deployment Considerations
+
+- Redis persistence should be enabled in production
+- Consider Bull queue monitoring in production
+- Implement proper error handling and retry logic for webhook failures
+- Set appropriate job concurrency limits based on server capacity
+
+## Architectural Diagram
+
+```
+Client → Express API → Agent Service → Tool Registry → Bull Queue → Redis
+                                          ↓                   ↑
+                                   Async Tool Execution       |
+                                          ↓                   |
+                                      Webhook ----------------+
+                                       →  Agent continues conversation
+```
+
+## Additional Resources
+
+- Review `ARCHITECTURE.md` for overall project architecture
+- See `README.md` for setup and general usage information

@@ -1,7 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-- port 3800
-- Don't write test scripts or test new functionalities
