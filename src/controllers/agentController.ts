@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AgentType } from "../constants/agents";
 import agentService from "../services/agentService";
+import webhookQueueService from "../services/webhookQueueService";
 /**
  * Controller to handle agent related requests
  */
@@ -8,7 +9,7 @@ class AgentController {
   constructor() {
     // Bind all methods to maintain 'this' context when used with Express middleware
     this.createAgent = this.createAgent.bind(this);
-    this.sendMessageToAgent = this.sendMessageToAgent.bind(this);
+    this.chatWithAgent = this.chatWithAgent.bind(this);
     this.getAgentById = this.getAgentById.bind(this);
     this.getAgentWithMessageHistory =
       this.getAgentWithMessageHistory.bind(this);
@@ -111,16 +112,16 @@ class AgentController {
    * @param req Express request object
    * @param res Express response object
    */
-  public async sendMessageToAgent(req: Request, res: Response) {
+  public async chatWithAgent(req: Request, res: Response) {
     try {
       const { agentId } = req.params;
       const { message } = req.body;
 
       console.log(
-        `[sendMessageToAgent] Received chat request for agent: ${agentId}`
+        `[chatWithAgent] Received chat request for agent: ${agentId}`
       );
       console.log(
-        `[sendMessageToAgent] Request body:`,
+        `[chatWithAgent] Request body:`,
         JSON.stringify(req.body, null, 2)
       );
 
@@ -129,13 +130,13 @@ class AgentController {
 
       // Process the chat using the agent service
       console.log(
-        `[sendMessageToAgent] Sending message to agent service: "${message}"`
+        `[chatWithAgent] Sending message to agent service: "${message}"`
       );
-      const result = await agentService.sendMessageToAgent(agentId, {
+      const result = await agentService.chatWithAgent(agentId, {
         role: "user",
         content: message,
       });
-      console.log(`[sendMessageToAgent] Received response from agent service`);
+      console.log(`[chatWithAgent] Received response from agent service`);
 
       // Return the complete response
       return res.status(200).json({
@@ -143,7 +144,7 @@ class AgentController {
         usage: result?.usage,
       });
     } catch (error) {
-      return this.handleControllerError(error, res, "sendMessageToAgent");
+      return this.handleControllerError(error, res, "chatWithAgent");
     }
   }
 
@@ -212,14 +213,29 @@ class AgentController {
         return res.status(400).json({ error: "Tool name is required" });
       }
 
-      const result = await agentService.handleWebhook(
+      console.log(
+        `[handleWebhook] Received webhook for agent: ${agentId}, tool: ${toolName}`
+      );
+
+      // Queue the webhook for processing
+      const queued = await webhookQueueService.handleWebhook(
         agentId,
         toolName,
         toolCallId,
         body
       );
 
-      return res.status(200).json({ result });
+      if (queued) {
+        return res.status(200).json({
+          success: true,
+          message: "Webhook queued for processing",
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to queue webhook",
+        });
+      }
     } catch (error) {
       return this.handleControllerError(error, res, "handleWebhook");
     }

@@ -9,7 +9,7 @@ const router = Router();
  * @desc Chat with an agent
  * @access Public
  */
-router.post("/:agentId/chat", asyncHandler(agentController.sendMessageToAgent));
+router.post("/:agentId/chat", asyncHandler(agentController.chatWithAgent));
 
 /**
  * @route POST /api/agents

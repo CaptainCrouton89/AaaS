@@ -1,6 +1,5 @@
 import { openai } from "@ai-sdk/openai";
 import { CoreMessage, generateText } from "ai";
-import dotenv from "dotenv";
 import { AgentType } from "../constants/agents";
 import { getSystemPrompt } from "../lib/prompts/agent.prompt";
 import { agentRepository } from "../repositories";
@@ -16,9 +15,26 @@ import {
   updateTaskTool,
 } from "../tools/delegation";
 import { Agent } from "../types/database";
+import { AsyncToolResponse } from "../types/dto";
 import agentMessageHistoryService from "./agentMessageHistoryService";
 
-dotenv.config();
+interface WebhookJob {
+  toolName: string;
+  toolCallId: string;
+  body: ToolResult;
+}
+
+const getAsyncToolResponseFromWebhookJob = (
+  webhookJob: WebhookJob
+): AsyncToolResponse => {
+  return {
+    success: webhookJob.body.success,
+    toolName: webhookJob.toolName,
+    toolCallId: webhookJob.toolCallId,
+    data: webhookJob.body.data,
+    error: webhookJob.body.error,
+  };
+};
 
 /**
  * Service to handle agent chat interactions using Vercel AI SDK
@@ -50,11 +66,11 @@ export class AgentService {
    * @param messages Previous message history
    * @returns A complete text response from the agent
    */
-  public async chatWithAgent(agentId: string, messages: CoreMessage[]) {
+  public async chatWithAgent(agentId: string, message: CoreMessage) {
     console.log(`[chatWithAgent] Processing chat for agent: ${agentId}`);
     console.log(
-      `[chatWithAgent] Received messages:`,
-      JSON.stringify(messages, null, 2)
+      `[chatWithAgent] Received message:`,
+      JSON.stringify(message, null, 2)
     );
 
     const agent = await this.getAgentById(agentId);
@@ -66,16 +82,19 @@ export class AgentService {
 
     // Validate message format for Vercel AI SDK
     console.error(
-      `[chatWithAgent] Messages is not an array. Type:`,
-      typeof messages
+      `[chatWithAgent] Message is not an array. Type:`,
+      typeof message
     );
+
+    let existingMessages =
+      await agentMessageHistoryService.getMessagesByAgentId(agentId);
 
     try {
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
         system: getSystemPrompt(agent),
-        messages: messages,
+        messages: [...existingMessages, message],
         tools: {
           helloWorld: toolRegistry
             .getTool("helloWorld")!
@@ -95,19 +114,20 @@ export class AgentService {
         maxSteps: 10, // Allow multiple steps for tool use
       });
 
+      const { text, usage, response } = result;
+
       console.log(
-        `[chatWithAgent] Generated response: "${result.text.substring(
-          0,
-          100
-        )}..."`
+        `[chatWithAgent] Generated response: "${text.substring(0, 100)}..."`
       );
-      console.log(`[chatWithAgent] Usage:`, result.usage);
+      console.log(`[chatWithAgent] Usage:`, usage);
+
+      console.warn("response", JSON.stringify(response.messages, null, 2));
 
       // Store the message in the agent's message history
-      await agentMessageHistoryService.addMessage(agentId, {
-        role: "assistant",
-        content: result.text,
-      });
+      await agentMessageHistoryService.addMessages(agentId, [
+        message,
+        ...response.messages,
+      ]);
 
       return result;
     } catch (error) {
@@ -148,62 +168,27 @@ export class AgentService {
     };
   }
 
-  public async handleWebhook(
-    agentId: string,
-    toolName: string,
-    toolCallId: string,
-    body: ToolResult
-  ) {
-    if (body.success) {
-      const result = await this.sendMessageToAgent(agentId, {
-        role: "user",
-        content: `[${toolName}: ToolId: ${toolCallId}] Result: ${JSON.stringify(
-          body.data,
-          null,
-          2
-        )}`,
-      });
-      return result;
-    } else {
-      return {
-        role: "user",
-        content: `[${toolName}: ToolId: ${toolCallId}] Error: ${body.error}`,
-      };
-    }
+  public async handleWebhook(agentId: string, webhookJob: WebhookJob) {
+    return await this.chatWithAgent(agentId, {
+      role: "user",
+      content: `${JSON.stringify(
+        [getAsyncToolResponseFromWebhookJob(webhookJob)],
+        null,
+        2
+      )}`,
+    });
   }
 
-  /**
-   * Store user message in the agent's history and get a response
-   * @param agentId The agent ID
-   * @param message The user message
-   * @returns The agent's response
-   */
-  public async sendMessageToAgent(agentId: string, message: CoreMessage) {
-    try {
-      let existingMessages =
-        await agentMessageHistoryService.getMessagesByAgentId(agentId);
-
-      // Filter and repair message history if needed
-      console.log(
-        `[sendMessageToAgent] Adding user message to history:`,
-        message
-      );
-      await agentMessageHistoryService.addMessage(agentId, message);
-
-      // Send all messages to the agent for processing
-      const updatedMessages = [...existingMessages, message];
-      console.log(
-        `[sendMessageToAgent] Sending ${updatedMessages.length} messages to agent`
-      );
-
-      const response = await this.chatWithAgent(agentId, updatedMessages);
-
-      console.log(`[sendMessageToAgent] Received response from chat`);
-      return response;
-    } catch (error) {
-      console.error("Error in sendMessageToAgent:", error);
-      throw error;
+  public async handleWebhooks(agentId: string, webhookJobs: WebhookJob[]) {
+    const content: AsyncToolResponse[] = [];
+    for (const job of webhookJobs) {
+      content.push(getAsyncToolResponseFromWebhookJob(job));
     }
+
+    return await this.chatWithAgent(agentId, {
+      role: "user",
+      content: JSON.stringify(content, null, 2),
+    });
   }
 
   /**
