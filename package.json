@@ -1,0 +1,38 @@
+{
+  "name": "job-queue-service",
+  "version": "1.0.0",
+  "description": "A simple job queue service using Bull and Redis",
+  "main": "dist/server.js",
+  "scripts": {
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "tsc",
+    "db:pull": "npx supabase gen types typescript --project-id 'glpwhhzbtexzqoghbwuy' --schema public > src/types/database.types.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ai-sdk/openai": "^1.3.16",
+    "@supabase/supabase-js": "^2.49.4",
+    "@types/ioredis": "^5.0.0",
+    "ai": "^4.3.9",
+    "axios": "^1.8.4",
+    "bull": "^4.16.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "ioredis": "^5.6.1",
+    "supabase": "^2.20.12",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@bull-board/api": "^6.9.2",
+    "@bull-board/express": "^6.9.2",
+    "@types/bull": "^4.10.4",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.14.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3"
+  }
+}
