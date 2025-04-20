@@ -2,7 +2,7 @@ import { toolRegistry } from "./baseTool";
 
 // Import all tools to make sure they are registered
 import "../delegation"; // Import the create agent tool
-import "./fetchWeatherTool";
+import "./deepSearchTool";
 import "./helloWorldTool";
 
 // Export for external use

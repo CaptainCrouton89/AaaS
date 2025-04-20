@@ -244,10 +244,14 @@ export class AgentService {
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
+        system: agent.background || "",
         messages: validatedMessages,
         tools: {
           helloWorld: toolRegistry
             .getTool("helloWorld")!
+            .getSynchronousTool(agentId),
+          deepSearch: toolRegistry
+            .getTool("deepSearch")!
             .getSynchronousTool(agentId),
           createAgent: createAgentTool,
           createTask: createTaskTool,

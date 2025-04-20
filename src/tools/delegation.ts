@@ -265,5 +265,19 @@ export const delegateTaskTool = tool({
   description: "Delegate a task to an agent",
   parameters: z.object({
     taskId: z.string().describe("ID of the task to delegate"),
+    agentId: z.string().describe("ID of the agent to delegate the task to"),
   }),
+  execute: async ({ taskId, agentId }) => {
+    try {
+      const response = await axios.post(
+        `${process.env.URL}/tasks/${taskId}/delegate`,
+        {
+          agent_id: agentId,
+        }
+      );
+    } catch (error) {
+      console.error("[DelegateTaskTool] Error delegating task:", error);
+      throw new Error(`Failed to delegate task: ${error}`);
+    }
+  },
 });
