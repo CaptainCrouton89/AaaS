@@ -3,7 +3,17 @@ import { CoreMessage, generateText } from "ai";
 import dotenv from "dotenv";
 import { AgentType } from "../constants/agents";
 import { agentRepository } from "../repositories";
-import { toolRegistry } from "../tools/async-tools/baseTool";
+import { toolRegistry, ToolResult } from "../tools/async-tools/baseTool";
+import {
+  createAgentTool,
+  createTaskTool,
+  delegateTaskTool,
+  deleteTaskTool,
+  getSubtasksTool,
+  getTasksByOwnerTool,
+  getTaskTool,
+  updateTaskTool,
+} from "../tools/delegation";
 import { Agent } from "../types/database";
 import agentMessageHistoryService from "./agentMessageHistoryService";
 
@@ -239,6 +249,14 @@ export class AgentService {
           helloWorld: toolRegistry
             .getTool("helloWorld")!
             .getSynchronousTool(agentId),
+          createAgent: createAgentTool,
+          createTask: createTaskTool,
+          getTask: getTaskTool,
+          updateTask: updateTaskTool,
+          deleteTask: deleteTaskTool,
+          getTasksByOwner: getTasksByOwnerTool,
+          getSubtasksTool: getSubtasksTool,
+          delegateTask: delegateTaskTool,
         },
         maxSteps: 10, // Allow multiple steps for tool use
       });
@@ -300,15 +318,24 @@ export class AgentService {
     agentId: string,
     toolName: string,
     toolCallId: string,
-    body: any
+    body: ToolResult
   ) {
-    const result = await this.sendMessageToAgent(agentId, {
-      role: "user",
-      content: `The tool ${toolName} with tool call id ${toolCallId} has returned the following result: ${JSON.stringify(
-        body
-      )}`,
-    });
-    return result;
+    if (body.success) {
+      const result = await this.sendMessageToAgent(agentId, {
+        role: "user",
+        content: `[${toolName}: ToolId: ${toolCallId}] Result:\n${JSON.stringify(
+          body,
+          null,
+          2
+        )}`,
+      });
+      return result;
+    } else {
+      return {
+        role: "user",
+        content: `[${toolName}: ToolId: ${toolCallId}] Error: ${body.error}`,
+      };
+    }
   }
 
   /**

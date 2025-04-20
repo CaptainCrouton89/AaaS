@@ -30,9 +30,7 @@ export class HelloWorldTool extends BaseAsyncJobTool {
         data: {
           type: "text",
           text: `Hello, ${name}! ${
-            delay > 0
-              ? `(after waiting ${delay} seconds). Now say hello to a random new person (use a real name)`
-              : ""
+            delay > 0 ? `(after waiting ${delay} seconds).` : ""
           }`,
           timestamp: new Date().toISOString(),
         },
