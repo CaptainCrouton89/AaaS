@@ -5,13 +5,14 @@ import { getSystemPrompt } from "../lib/prompts/agent.prompt";
 import { agentRepository } from "../repositories";
 import { toolRegistry, ToolResult } from "../tools/async-tools/baseTool";
 import {
-  createAgentTool,
   createTaskTool,
   delegateTaskTool,
   deleteTaskTool,
+  getMessageTeamMemberTool,
   getSubtasksTool,
   getTasksByOwnerTool,
   getTaskTool,
+  recruitTeamMemberTool,
   updateTaskTool,
 } from "../tools/delegation";
 import { Agent } from "../types/database";
@@ -80,12 +81,6 @@ export class AgentService {
       throw new Error("Agent not found");
     }
 
-    // Validate message format for Vercel AI SDK
-    console.error(
-      `[chatWithAgent] Message is not an array. Type:`,
-      typeof message
-    );
-
     let existingMessages =
       await agentMessageHistoryService.getMessagesByAgentId(agentId);
 
@@ -102,7 +97,7 @@ export class AgentService {
           deepSearch: toolRegistry
             .getTool("deepSearch")!
             .getSynchronousTool(agentId),
-          createAgent: createAgentTool,
+          createAgent: recruitTeamMemberTool,
           createTask: createTaskTool,
           getTask: getTaskTool,
           updateTask: updateTaskTool,
@@ -110,8 +105,9 @@ export class AgentService {
           getTasksByOwner: getTasksByOwnerTool,
           getSubtasksTool: getSubtasksTool,
           delegateTask: delegateTaskTool,
+          messageTeamMember: getMessageTeamMemberTool(agentId),
         },
-        maxSteps: 10, // Allow multiple steps for tool use
+        maxSteps: 30, // Allow multiple steps for tool use
       });
 
       const { text, usage, response } = result;

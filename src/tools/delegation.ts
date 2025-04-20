@@ -4,42 +4,42 @@ import { AgentType } from "../constants/agents";
 import { AgentService } from "../services/agentService";
 import { TaskService } from "../services/taskService";
 
-export const createAgentTool = tool({
-  description: "Create a new agent that can be delegated tasks to",
+export const recruitTeamMemberTool = tool({
+  description: "Recruite a new team member that can be delegated tasks to",
   parameters: z.object({
-    name: z.string().describe("The name of the agent to create"),
-    goal: z.string().describe("The goal of the agent"),
-    agentType: z
+    name: z.string().describe("The name of the person to recruit"),
+    goal: z.string().describe("The goal of the person to recruit"),
+    jobTitle: z
       .enum(Object.values(AgentType) as [string, ...string[]])
-      .optional()
-      .describe("Type of agent to create (defaults to GENERAL)"),
+      .describe("The job title of the person to recruit"),
     background: z
       .string()
-      .optional()
-      .describe("Additional background information for the agent"),
+      .describe(
+        "Additional background information for the person to recruit (relevant to the job title)"
+      ),
   }),
-  execute: async ({ name, goal, agentType, background }) => {
+  execute: async ({ name, goal, jobTitle, background }) => {
     try {
       const agentService = new AgentService();
       const agent = await agentService.createAgent(
         name,
         goal,
-        agentType as AgentType,
+        jobTitle as AgentType,
         background || ""
       );
 
       if (agent) {
         return {
-          message: "Agent created successfully",
-          agentId: agent.id,
+          message: "Team member recruited successfully",
+          teamMemberId: agent.id,
         };
       } else {
-        throw new Error(`Failed to queue agent creation: ${name}`);
+        throw new Error(`Failed to queue team member recruitment: ${name}`);
       }
     } catch (error) {
-      console.error("[CreateAgentTool] Error submitting job:", error);
+      console.error("[RecruitTeamMemberTool] Error submitting job:", error);
       throw new Error(
-        `Failed to create agent: ${
+        `Failed to recruit team member: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -48,7 +48,7 @@ export const createAgentTool = tool({
 });
 
 export const createTaskTool = tool({
-  description: "Create a new task that can be assigned to an agent",
+  description: "Create a new task that can be assigned to a team member",
   parameters: z.object({
     title: z.string().describe("The title of the task"),
     description: z
@@ -57,7 +57,7 @@ export const createTaskTool = tool({
     ownerId: z
       .string()
       .optional()
-      .describe("ID of the agent that will own this task"),
+      .describe("ID of the team member that will own this task"),
     parentId: z
       .string()
       .optional()
@@ -116,7 +116,7 @@ export const updateTaskTool = tool({
     title: z.string().optional().describe("New title for the task"),
     description: z.string().optional().describe("New description for the task"),
     status: z.string().optional().describe("New status for the task"),
-    ownerId: z.string().optional().describe("ID of the new owner agent"),
+    ownerId: z.string().optional().describe("ID of the new owner team member"),
   }),
   execute: async ({ taskId, title, description, status, ownerId }) => {
     try {
@@ -204,9 +204,12 @@ export const getTaskTool = tool({
 });
 
 export const getTasksByOwnerTool = tool({
-  description: "Get all tasks assigned to a specific agent",
+  description:
+    "Get all tasks assigned to a specific team member (such as yourself)",
   parameters: z.object({
-    ownerId: z.string().describe("ID of the agent whose tasks to retrieve"),
+    ownerId: z
+      .string()
+      .describe("ID of the team member whose tasks to retrieve"),
   }),
   execute: async ({ ownerId }) => {
     try {
@@ -262,12 +265,14 @@ export const getSubtasksTool = tool({
 });
 
 export const delegateTaskTool = tool({
-  description: "Delegate a task to an agent",
+  description: "Delegate a task to a team member",
   parameters: z.object({
     taskId: z.string().describe("ID of the task to delegate"),
-    agentId: z.string().describe("ID of the agent to delegate the task to"),
+    teamMemberId: z
+      .string()
+      .describe("ID of the team member to delegate the task to"),
   }),
-  execute: async ({ taskId, agentId }) => {
+  execute: async ({ taskId, teamMemberId }) => {
     try {
       const taskService = new TaskService();
       //   const task = await taskService.delegateTask(taskId, agentId);
@@ -286,3 +291,30 @@ export const delegateTaskTool = tool({
     }
   },
 });
+
+export const getMessageTeamMemberTool = (fromTeamMemberId: string) =>
+  tool({
+    description: "Send a message to a team member",
+    parameters: z.object({
+      teamMemberId: z
+        .string()
+        .describe("ID of the team member to send the message to"),
+      message: z.string().describe("The message to send to the team member"),
+    }),
+    execute: async ({ teamMemberId, message }) => {
+      try {
+        const agentService = new AgentService();
+        const result = await agentService.chatWithAgent(teamMemberId, {
+          role: "user",
+          content: `From team member ${fromTeamMemberId}: ${message}`,
+        });
+
+        const text: string = result.text;
+
+        return text;
+      } catch (error) {
+        console.error("[MessageAgentTool] Error sending message:", error);
+        throw new Error(`Failed to send message: ${error}`);
+      }
+    },
+  });
