@@ -2,6 +2,7 @@ import { openai } from "@ai-sdk/openai";
 import { CoreMessage, generateText } from "ai";
 import dotenv from "dotenv";
 import { AgentType } from "../constants/agents";
+import { getSystemPrompt } from "../lib/prompts/agent.prompt";
 import { agentRepository } from "../repositories";
 import { toolRegistry, ToolResult } from "../tools/async-tools/baseTool";
 import {
@@ -31,13 +32,13 @@ export class AgentService {
    */
   public async createAgent(
     name: string,
-    description: string,
+    goal: string,
     agentType: AgentType,
     background: string
   ) {
     return await agentRepository.create({
       title: name,
-      goal: description,
+      goal: goal,
       agent_type: agentType,
       background: background,
     });
@@ -124,7 +125,8 @@ export class AgentService {
     if (
       msg.role !== "user" &&
       msg.role !== "assistant" &&
-      msg.role !== "system"
+      msg.role !== "system" &&
+      msg.role !== "tool"
     ) {
       console.warn(
         `[createValidatedMessage] Invalid message role: ${msg.role}, defaulting to "user"`
@@ -150,6 +152,10 @@ export class AgentService {
         role: msg.role,
         content: msg.content,
       };
+
+      // Preserve tool-specific properties if present
+      if (msg.toolName) validMsg.toolName = msg.toolName;
+      if (msg.toolCallId) validMsg.toolCallId = msg.toolCallId;
     }
 
     return validMsg;
@@ -244,7 +250,7 @@ export class AgentService {
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
-        system: agent.background || "",
+        system: getSystemPrompt(agent),
         messages: validatedMessages,
         tools: {
           helloWorld: toolRegistry
@@ -278,6 +284,20 @@ export class AgentService {
         role: "assistant",
         content: result.text,
       });
+
+      // Store any tool calls made during the conversation
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        for (const toolCall of result.toolCalls) {
+          await agentMessageHistoryService.addMessage(agentId, {
+            role: "assistant",
+            content: `Tool call: ${toolCall.name}(${JSON.stringify(
+              toolCall.parameters
+            )})`,
+            toolName: toolCall.name,
+            toolCallId: toolCall.id,
+          });
+        }
+      }
 
       return result;
     } catch (error) {
@@ -325,16 +345,28 @@ export class AgentService {
     body: ToolResult
   ) {
     if (body.success) {
+      // Create a proper tool message for the result
+      await agentMessageHistoryService.addMessage(agentId, {
+        role: "tool",
+        content: JSON.stringify(body.result, null, 2),
+        toolName: toolName,
+        toolCallId: toolCallId,
+      });
+
       const result = await this.sendMessageToAgent(agentId, {
         role: "user",
-        content: `[${toolName}: ToolId: ${toolCallId}] Result:\n${JSON.stringify(
-          body,
-          null,
-          2
-        )}`,
+        content: `[${toolName} completed] Please continue with your task.`,
       });
       return result;
     } else {
+      // Store the tool error in the message history
+      await agentMessageHistoryService.addMessage(agentId, {
+        role: "tool",
+        content: `Error: ${body.error}`,
+        toolName: toolName,
+        toolCallId: toolCallId,
+      });
+
       return {
         role: "user",
         content: `[${toolName}: ToolId: ${toolCallId}] Error: ${body.error}`,

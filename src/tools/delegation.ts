@@ -1,13 +1,13 @@
 import { tool } from "ai";
-import axios from "axios";
 import { z } from "zod";
 import { AgentType } from "../constants/agents";
+import { AgentService } from "../services/agentService";
+import { TaskService } from "../services/taskService";
 
 export const createAgentTool = tool({
   description: "Create a new agent that can be delegated tasks to",
   parameters: z.object({
     name: z.string().describe("The name of the agent to create"),
-    description: z.string().describe("The purpose or goal of the agent"),
     goal: z.string().describe("The goal of the agent"),
     agentType: z
       .enum(Object.values(AgentType) as [string, ...string[]])
@@ -18,25 +18,23 @@ export const createAgentTool = tool({
       .optional()
       .describe("Additional background information for the agent"),
   }),
-  execute: async ({ name, description, goal, agentType, background }) => {
+  execute: async ({ name, goal, agentType, background }) => {
     try {
-      const response = await axios.post(`${process.env.URL}/agents`, {
+      const agentService = new AgentService();
+      const agent = await agentService.createAgent(
         name,
-        description,
         goal,
-        agentType,
-        background,
-      });
+        agentType as AgentType,
+        background || ""
+      );
 
-      if (response.status === 200) {
+      if (agent) {
         return {
-          message: response.data.message,
-          toolCallId: response.data.id,
+          message: "Agent created successfully",
+          agentId: agent.id,
         };
       } else {
-        throw new Error(
-          `Failed to queue agent creation: ${response.data.message}`
-        );
+        throw new Error(`Failed to queue agent creation: ${name}`);
       }
     } catch (error) {
       console.error("[CreateAgentTool] Error submitting job:", error);
@@ -82,7 +80,8 @@ export const createTaskTool = tool({
     status,
   }) => {
     try {
-      const response = await axios.post(`${process.env.URL}/tasks`, {
+      const taskService = new TaskService();
+      const task = await taskService.createTask({
         title,
         description,
         owner_id: ownerId,
@@ -91,13 +90,13 @@ export const createTaskTool = tool({
         status,
       });
 
-      if (response.status === 201) {
+      if (task) {
         return {
           message: "Task created successfully",
-          taskId: response.data.data.id,
+          taskId: task.id,
         };
       } else {
-        throw new Error(`Failed to create task: ${response.data.message}`);
+        throw new Error(`Failed to create task: ${title}`);
       }
     } catch (error) {
       console.error("[CreateTaskTool] Error creating task:", error);
@@ -121,21 +120,22 @@ export const updateTaskTool = tool({
   }),
   execute: async ({ taskId, title, description, status, ownerId }) => {
     try {
-      const response = await axios.put(`${process.env.URL}/tasks/${taskId}`, {
+      const taskService = new TaskService();
+      const task = await taskService.updateTask(taskId, {
         title,
         description,
         status,
         owner_id: ownerId,
       });
 
-      if (response.status === 200) {
-        return {
-          message: "Task updated successfully",
-          taskId: response.data.data.id,
-        };
-      } else {
-        throw new Error(`Failed to update task: ${response.data.message}`);
+      if (!task) {
+        throw new Error("Task not found");
       }
+
+      return {
+        message: "Task updated successfully",
+        taskId: task?.id,
+      };
     } catch (error) {
       console.error("[UpdateTaskTool] Error updating task:", error);
       throw new Error(
@@ -154,14 +154,15 @@ export const deleteTaskTool = tool({
   }),
   execute: async ({ taskId }) => {
     try {
-      const response = await axios.delete(`${process.env.URL}/tasks/${taskId}`);
+      const taskService = new TaskService();
+      const task = await taskService.deleteTask(taskId);
 
-      if (response.status === 200) {
+      if (task) {
         return {
           message: "Task deleted successfully",
         };
       } else {
-        throw new Error(`Failed to delete task: ${response.data.message}`);
+        throw new Error(`Failed to delete task: ${taskId}`);
       }
     } catch (error) {
       console.error("[DeleteTaskTool] Error deleting task:", error);
@@ -181,14 +182,15 @@ export const getTaskTool = tool({
   }),
   execute: async ({ taskId }) => {
     try {
-      const response = await axios.get(`${process.env.URL}/tasks/${taskId}`);
+      const taskService = new TaskService();
+      const task = await taskService.getTaskById(taskId);
 
-      if (response.status === 200) {
+      if (task) {
         return {
-          task: response.data.data,
+          task: task,
         };
       } else {
-        throw new Error(`Failed to get task: ${response.data.message}`);
+        throw new Error(`Failed to get task: ${taskId}`);
       }
     } catch (error) {
       console.error("[GetTaskTool] Error getting task:", error);
@@ -208,16 +210,15 @@ export const getTasksByOwnerTool = tool({
   }),
   execute: async ({ ownerId }) => {
     try {
-      const response = await axios.get(
-        `${process.env.URL}/tasks/owner/${ownerId}`
-      );
+      const taskService = new TaskService();
+      const tasks = await taskService.getTasksByOwnerId(ownerId);
 
-      if (response.status === 200) {
+      if (tasks) {
         return {
-          tasks: response.data.data,
+          tasks: tasks,
         };
       } else {
-        throw new Error(`Failed to get tasks: ${response.data.message}`);
+        throw new Error(`Failed to get tasks: ${ownerId}`);
       }
     } catch (error) {
       console.error("[GetTasksByOwnerTool] Error getting tasks:", error);
@@ -239,16 +240,15 @@ export const getSubtasksTool = tool({
   }),
   execute: async ({ parentTaskId }) => {
     try {
-      const response = await axios.get(
-        `${process.env.URL}/tasks/${parentTaskId}/subtasks`
-      );
+      const taskService = new TaskService();
+      const subtasks = await taskService.getSubtasks(parentTaskId);
 
-      if (response.status === 200) {
+      if (subtasks) {
         return {
-          subtasks: response.data.data,
+          subtasks: subtasks,
         };
       } else {
-        throw new Error(`Failed to get subtasks: ${response.data.message}`);
+        throw new Error(`Failed to get subtasks: ${parentTaskId}`);
       }
     } catch (error) {
       console.error("[GetSubtasksTool] Error getting subtasks:", error);
@@ -269,12 +269,17 @@ export const delegateTaskTool = tool({
   }),
   execute: async ({ taskId, agentId }) => {
     try {
-      const response = await axios.post(
-        `${process.env.URL}/tasks/${taskId}/delegate`,
-        {
-          agent_id: agentId,
-        }
-      );
+      const taskService = new TaskService();
+      //   const task = await taskService.delegateTask(taskId, agentId);
+
+      //   if (task) {
+      //     return {
+      //       message: "Task delegated successfully",
+      //       taskId: task.id,
+      //     };
+      //   } else {
+      //     throw new Error(`Failed to delegate task: ${taskId}`);
+      //   }
     } catch (error) {
       console.error("[DelegateTaskTool] Error delegating task:", error);
       throw new Error(`Failed to delegate task: ${error}`);

@@ -29,7 +29,7 @@ export class HelloWorldTool extends BaseAsyncJobTool {
         success: true,
         data: {
           type: "text",
-          text: `Hello, ${name}! ${
+          text: `Said hello to ${name}. ${
             delay > 0 ? `(after waiting ${delay} seconds).` : ""
           }`,
           timestamp: new Date().toISOString(),
