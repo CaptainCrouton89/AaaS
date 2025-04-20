@@ -5,6 +5,13 @@ import { asyncHandler } from "../middleware/asyncHandler";
 const router = Router();
 
 /**
+ * @route GET /api/agents
+ * @desc Get all agents
+ * @access Public
+ */
+router.get("/", asyncHandler(agentController.getAllAgents));
+
+/**
  * @route POST /api/agents/:agentId/chat
  * @desc Chat with an agent
  * @access Public

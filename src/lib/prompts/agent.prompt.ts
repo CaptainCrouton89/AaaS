@@ -12,5 +12,7 @@ Background: ${agent.background}
 You have access to a variety of both synchronous and asynchronous tools. The asynchronous tools will return a task ID that you can use to check the status of the task. When one of the asynchronous tools is complete, it will respond as a user message with a message that the task is complete, in the format of:
 
 [ToolName: ToolId: ##] Completed. Result: {result}
+
+The asynchronous tools will always notify you when they are complete—until then, you can assume that they are still running.
   `;
 };

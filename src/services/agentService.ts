@@ -15,9 +15,10 @@ import {
   recruitTeamMemberTool,
   updateTaskTool,
 } from "../tools/delegation";
-import { Agent } from "../types/database";
+import { Agent, Task } from "../types/database";
 import { AsyncToolResponse } from "../types/dto";
 import agentMessageHistoryService from "./agentMessageHistoryService";
+import taskService from "./taskService";
 
 interface WebhookJob {
   toolName: string;
@@ -215,6 +216,39 @@ export class AgentService {
       console.error("Error in clearMessageHistory:", error);
       return false;
     }
+  }
+
+  /**
+   * Get all agents
+   * @returns Array of all agents
+   */
+  public async getAllAgents(): Promise<Agent[]> {
+    try {
+      console.log(`[getAllAgents] Retrieving all agents`);
+      return await agentRepository.findAll();
+    } catch (error) {
+      console.error("Error in getAllAgents:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get an agent by its ID along with its tasks
+   * @param agentId The agent ID
+   * @returns The agent and its tasks or null if not found
+   */
+  public async getAgentWithTasks(
+    agentId: string
+  ): Promise<{ agent: Agent; tasks: Task[] } | null> {
+    const agent = await agentRepository.findById(agentId);
+
+    if (!agent) {
+      return null;
+    }
+
+    const tasks = await taskService.getTasksByOwnerId(agentId);
+
+    return { agent, tasks };
   }
 }
 

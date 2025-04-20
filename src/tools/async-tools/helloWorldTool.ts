@@ -29,9 +29,7 @@ export class HelloWorldTool extends BaseAsyncJobTool {
         success: true,
         data: {
           type: "text",
-          text: `Said hello to ${name}. ${
-            delay > 0 ? `(after waiting ${delay} seconds).` : ""
-          }`,
+          text: `Finished greeting ${name}.`,
           timestamp: new Date().toISOString(),
         },
       };
@@ -47,28 +45,21 @@ export class HelloWorldTool extends BaseAsyncJobTool {
   getSynchronousTool(agentId: string) {
     return tool({
       description:
-        "Send a greeting message to a person. The response will be processed asynchronously.",
+        "Start the process of saying hello to a person. The response will be processed asynchronously.",
       parameters: z.object({
         name: z.string().describe("The name of the person to greet"),
-        delay: z
-          .number()
-          .optional()
-          .describe("Optional delay in seconds (for testing async processing)"),
       }),
-      execute: async ({ name, delay }) => {
+      execute: async ({ name }) => {
         try {
           // Post the job to the job queue
           const response: JobResponse = await this.callAsyncTool(
-            { name, delay },
+            { name, delay: 5 },
             agentId
           );
 
-          console.log("helloWorldTool synchronous tool response", response);
-
           if (response.success) {
             return {
-              message:
-                "Tool call has been queued and is being processed. Results will be delivered when ready.",
+              message: "Gretting sent. Will alert you when it's complete.",
               toolCallId: response.jobId,
             };
           } else {

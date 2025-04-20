@@ -15,6 +15,7 @@ class AgentController {
       this.getAgentWithMessageHistory.bind(this);
     this.handleWebhook = this.handleWebhook.bind(this);
     this.clearAgentMessageHistory = this.clearAgentMessageHistory.bind(this);
+    this.getAllAgents = this.getAllAgents.bind(this);
 
     // Also bind the private helper methods
     this.validateAgentId = this.validateAgentId.bind(this);
@@ -271,6 +272,23 @@ class AgentController {
       }
     } catch (error) {
       return this.handleControllerError(error, res, "clearAgentMessageHistory");
+    }
+  }
+
+  /**
+   * Get all agents
+   * @param req Express request object
+   * @param res Express response object
+   */
+  public async getAllAgents(req: Request, res: Response) {
+    try {
+      console.log(`[getAllAgents] Retrieving all agents`);
+
+      const agents = await agentService.getAllAgents();
+
+      return res.status(200).json({ agents });
+    } catch (error) {
+      return this.handleControllerError(error, res, "getAllAgents");
     }
   }
 }
