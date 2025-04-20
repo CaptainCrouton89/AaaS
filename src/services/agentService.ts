@@ -45,213 +45,37 @@ export class AgentService {
   }
 
   /**
-   * Validates and filters a message array
-   * @param messages The messages to validate
-   * @returns Filtered and validated array of CoreMessage objects
-   */
-  private validateAndFilterMessages(messages: any[]): CoreMessage[] {
-    // Filter out completely invalid messages
-    const filteredMessages = this.filterValidMessageObjects(messages);
-
-    // Ensure remaining messages are in correct format
-    const validatedMessages: CoreMessage[] = filteredMessages
-      .filter((msg) => this.hasRequiredMessageProperties(msg))
-      .map((msg) => this.createValidatedMessage(msg));
-
-    // Ensure there's at least one message
-    if (validatedMessages.length === 0) {
-      console.warn(
-        `[validateMessages] No valid messages after filtering. Adding a default user message.`
-      );
-      validatedMessages.push(this.createDefaultMessage());
-    }
-
-    return validatedMessages;
-  }
-
-  /**
-   * Filters out invalid message objects
-   * @param messages Array of potential message objects
-   * @returns Array of valid message objects
-   */
-  private filterValidMessageObjects(messages: any[]): any[] {
-    const filteredMessages = messages.filter((msg) => {
-      const isValid = msg && typeof msg === "object";
-      if (!isValid) {
-        console.warn(
-          `[filterValidMessageObjects] Filtering out invalid message object:`,
-          msg
-        );
-      }
-      return isValid;
-    });
-
-    if (filteredMessages.length !== messages.length) {
-      console.log(
-        `[filterValidMessageObjects] Filtered out ${
-          messages.length - filteredMessages.length
-        } invalid message objects`
-      );
-    }
-
-    return filteredMessages;
-  }
-
-  /**
-   * Checks if a message has all required properties
-   * @param msg The message to check
-   * @returns True if the message has all required properties
-   */
-  private hasRequiredMessageProperties(msg: any): boolean {
-    const isValid = msg.role && msg.content !== undefined;
-    if (!isValid) {
-      console.warn(
-        `[hasRequiredMessageProperties] Filtering out message with missing properties:`,
-        JSON.stringify(msg)
-      );
-    }
-    return isValid;
-  }
-
-  /**
-   * Creates a properly validated message object
-   * @param msg The message to validate
-   * @returns A validated CoreMessage
-   */
-  private createValidatedMessage(msg: any): CoreMessage {
-    let validMsg: CoreMessage;
-
-    // Ensure role is valid
-    if (
-      msg.role !== "user" &&
-      msg.role !== "assistant" &&
-      msg.role !== "system" &&
-      msg.role !== "tool"
-    ) {
-      console.warn(
-        `[createValidatedMessage] Invalid message role: ${msg.role}, defaulting to "user"`
-      );
-      validMsg = {
-        role: "user",
-        content:
-          typeof msg.content === "string" ? msg.content : String(msg.content),
-      };
-    } else if (typeof msg.content !== "string") {
-      // Ensure content is a string (Vercel AI SDK requirement)
-      console.warn(
-        `[createValidatedMessage] Message content is not a string, converting:`,
-        msg.content
-      );
-      validMsg = {
-        role: msg.role,
-        content: String(msg.content),
-      };
-    } else {
-      // Message is already valid
-      validMsg = {
-        role: msg.role,
-        content: msg.content,
-      };
-
-      // Preserve tool-specific properties if present
-      if (msg.toolName) validMsg.toolName = msg.toolName;
-      if (msg.toolCallId) validMsg.toolCallId = msg.toolCallId;
-    }
-
-    return validMsg;
-  }
-
-  /**
-   * Creates a default message when no valid messages are found
-   * @returns A default user message
-   */
-  private createDefaultMessage(): CoreMessage {
-    return {
-      role: "user",
-      content: "Hello",
-    };
-  }
-
-  /**
-   * Filters and repairs a message history
-   * @param agentId Agent ID
-   * @param messages Messages to filter and repair
-   * @returns Cleaned message array
-   */
-  private async repairMessageHistory(
-    agentId: string,
-    messages: any[]
-  ): Promise<CoreMessage[]> {
-    const validMessages = messages.filter((msg) => {
-      const isValid = msg && msg.role && msg.content !== undefined;
-      if (!isValid) {
-        console.warn(
-          `[repairMessageHistory] Filtering out invalid message:`,
-          JSON.stringify(msg)
-        );
-      }
-      return isValid;
-    });
-
-    if (validMessages.length !== messages.length) {
-      console.log(
-        `[repairMessageHistory] Filtered out ${
-          messages.length - validMessages.length
-        } invalid messages`
-      );
-
-      // Update the stored messages to clean up the history
-      await agentMessageHistoryService.storeMessages(agentId, validMessages);
-      console.log(
-        `[repairMessageHistory] Updated message history with only valid messages`
-      );
-    }
-
-    return validMessages;
-  }
-
-  /**
    * Process a chat with the agent
    * @param agentId The agent ID
    * @param messages Previous message history
    * @returns A complete text response from the agent
    */
   public async chatWithAgent(agentId: string, messages: CoreMessage[]) {
+    console.log(`[chatWithAgent] Processing chat for agent: ${agentId}`);
+    console.log(
+      `[chatWithAgent] Received messages:`,
+      JSON.stringify(messages, null, 2)
+    );
+
+    const agent = await this.getAgentById(agentId);
+
+    if (!agent) {
+      console.error(`[chatWithAgent] Agent not found with ID: ${agentId}`);
+      throw new Error("Agent not found");
+    }
+
+    // Validate message format for Vercel AI SDK
+    console.error(
+      `[chatWithAgent] Messages is not an array. Type:`,
+      typeof messages
+    );
+
     try {
-      console.log(`[chatWithAgent] Processing chat for agent: ${agentId}`);
-      console.log(
-        `[chatWithAgent] Received messages:`,
-        JSON.stringify(messages, null, 2)
-      );
-
-      const agent = await this.getAgentById(agentId);
-
-      if (!agent) {
-        console.error(`[chatWithAgent] Agent not found with ID: ${agentId}`);
-        throw new Error("Agent not found");
-      }
-
-      // Validate message format for Vercel AI SDK
-      if (!Array.isArray(messages)) {
-        console.error(
-          `[chatWithAgent] Messages is not an array. Type:`,
-          typeof messages
-        );
-        throw new Error("Messages must be an array");
-      }
-
-      // Validate and filter messages
-      const validatedMessages = this.validateAndFilterMessages(messages);
-
-      console.log(
-        `[chatWithAgent] Generating response with ${validatedMessages.length} messages`
-      );
-
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
         system: getSystemPrompt(agent),
-        messages: validatedMessages,
+        messages: messages,
         tools: {
           helloWorld: toolRegistry
             .getTool("helloWorld")!
@@ -284,20 +108,6 @@ export class AgentService {
         role: "assistant",
         content: result.text,
       });
-
-      // Store any tool calls made during the conversation
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        for (const toolCall of result.toolCalls) {
-          await agentMessageHistoryService.addMessage(agentId, {
-            role: "assistant",
-            content: `Tool call: ${toolCall.name}(${JSON.stringify(
-              toolCall.parameters
-            )})`,
-            toolName: toolCall.name,
-            toolCallId: toolCall.id,
-          });
-        }
-      }
 
       return result;
     } catch (error) {
@@ -345,28 +155,16 @@ export class AgentService {
     body: ToolResult
   ) {
     if (body.success) {
-      // Create a proper tool message for the result
-      await agentMessageHistoryService.addMessage(agentId, {
-        role: "tool",
-        content: JSON.stringify(body.result, null, 2),
-        toolName: toolName,
-        toolCallId: toolCallId,
-      });
-
       const result = await this.sendMessageToAgent(agentId, {
         role: "user",
-        content: `[${toolName} completed] Please continue with your task.`,
+        content: `[${toolName}: ToolId: ${toolCallId}] Result: ${JSON.stringify(
+          body.data,
+          null,
+          2
+        )}`,
       });
       return result;
     } else {
-      // Store the tool error in the message history
-      await agentMessageHistoryService.addMessage(agentId, {
-        role: "tool",
-        content: `Error: ${body.error}`,
-        toolName: toolName,
-        toolCallId: toolCallId,
-      });
-
       return {
         role: "user",
         content: `[${toolName}: ToolId: ${toolCallId}] Error: ${body.error}`,
@@ -386,11 +184,6 @@ export class AgentService {
         await agentMessageHistoryService.getMessagesByAgentId(agentId);
 
       // Filter and repair message history if needed
-      existingMessages = await this.repairMessageHistory(
-        agentId,
-        existingMessages
-      );
-
       console.log(
         `[sendMessageToAgent] Adding user message to history:`,
         message

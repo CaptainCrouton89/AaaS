@@ -139,8 +139,8 @@ class AgentController {
 
       // Return the complete response
       return res.status(200).json({
-        response: result.text,
-        usage: result.usage,
+        response: result?.text,
+        usage: result?.usage,
       });
     } catch (error) {
       return this.handleControllerError(error, res, "sendMessageToAgent");
