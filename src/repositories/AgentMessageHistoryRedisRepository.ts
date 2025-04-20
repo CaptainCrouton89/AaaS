@@ -69,11 +69,13 @@ export class AgentMessageHistoryRedisRepository {
    * Add multiple messages to the agent's message history
    * @param agentId The agent ID
    * @param messages Array of CoreMessage objects to add
+   * @param ownerId The ID of the owner (not used in Redis, but maintained for API consistency)
    * @returns True if successfully added
    */
   async addMessages(
     agentId: string,
-    messages: CoreMessage[]
+    messages: CoreMessage[],
+    ownerId?: string // Optional parameter to maintain consistent interface
   ): Promise<boolean> {
     try {
       const existingMessages = await this.getMessagesByAgentId(agentId);

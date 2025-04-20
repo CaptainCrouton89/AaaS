@@ -100,33 +100,6 @@ export type Database = {
           },
         ]
       }
-      contacts: {
-        Row: {
-          created_at: string | null
-          email: string
-          id: string
-          last_contacted: string | null
-          name: string | null
-          owner: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          email: string
-          id?: string
-          last_contacted?: string | null
-          name?: string | null
-          owner?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          email?: string
-          id?: string
-          last_contacted?: string | null
-          name?: string | null
-          owner?: string | null
-        }
-        Relationships: []
-      }
       contexts: {
         Row: {
           created_at: string | null
@@ -195,39 +168,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      short_term_memory: {
-        Row: {
-          content: string
-          created_at: string
-          embedding: string | null
-          id: string
-          owner: string | null
-          relevance_score: number
-          source: string
-          source_id: string | null
-        }
-        Insert: {
-          content: string
-          created_at?: string
-          embedding?: string | null
-          id?: string
-          owner?: string | null
-          relevance_score: number
-          source: string
-          source_id?: string | null
-        }
-        Update: {
-          content?: string
-          created_at?: string
-          embedding?: string | null
-          id?: string
-          owner?: string | null
-          relevance_score?: number
-          source?: string
-          source_id?: string | null
-        }
-        Relationships: []
       }
       tasks: {
         Row: {

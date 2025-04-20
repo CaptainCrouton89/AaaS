@@ -94,12 +94,14 @@ class AgentController {
   public async createAgent(req: Request, res: Response) {
     try {
       const { name, description, agentType, background } = req.body;
+      const ownerId = req.user?.id || "system";
 
       const agent = await agentService.createAgent(
         name,
         description,
         agentType as AgentType,
-        background
+        background,
+        ownerId
       );
 
       return res.status(201).json({ agent });

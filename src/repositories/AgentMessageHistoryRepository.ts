@@ -132,11 +132,17 @@ export class AgentMessageHistoryRepository
   }
 
   async createMany(
-    data: Partial<AgentMessageHistory>[]
+    data: Partial<AgentMessageHistory>[],
+    ownerId: string = "system"
   ): Promise<AgentMessageHistory[]> {
+    const messagesWithOwner = data.map((message) => ({
+      ...message,
+      owner: message.owner || ownerId,
+    }));
+
     const { data: newMessages, error } = await supabase
       .from("agent_message_history")
-      .insert(data)
+      .insert(messagesWithOwner)
       .select();
 
     if (error) {

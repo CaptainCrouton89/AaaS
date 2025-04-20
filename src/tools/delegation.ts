@@ -4,110 +4,114 @@ import { AgentType } from "../constants/agents";
 import { AgentService } from "../services/agentService";
 import { TaskService } from "../services/taskService";
 
-export const recruitTeamMemberTool = tool({
-  description: "Recruite a new team member that can be delegated tasks to",
-  parameters: z.object({
-    name: z.string().describe("The name of the person to recruit"),
-    goal: z.string().describe("The goal of the person to recruit"),
-    jobTitle: z
-      .enum(Object.values(AgentType) as [string, ...string[]])
-      .describe("The job title of the person to recruit"),
-    background: z
-      .string()
-      .describe(
-        "Additional background information for the person to recruit (relevant to the job title)"
-      ),
-  }),
-  execute: async ({ name, goal, jobTitle, background }) => {
-    try {
-      const agentService = new AgentService();
-      const agent = await agentService.createAgent(
-        name,
-        goal,
-        jobTitle as AgentType,
-        background || ""
-      );
+export const getRecruitTeamMemberTool = (userId: string) =>
+  tool({
+    description: "Recruite a new team member that can be delegated tasks to",
+    parameters: z.object({
+      name: z.string().describe("The name of the person to recruit"),
+      goal: z.string().describe("The goal of the person to recruit"),
+      jobTitle: z
+        .enum(Object.values(AgentType) as [string, ...string[]])
+        .describe("The job title of the person to recruit"),
+      background: z
+        .string()
+        .describe(
+          "Additional background information for the person to recruit (relevant to the job title)"
+        ),
+    }),
+    execute: async ({ name, goal, jobTitle, background }) => {
+      try {
+        const agentService = new AgentService();
+        const agent = await agentService.createAgent(
+          name,
+          goal,
+          jobTitle as AgentType,
+          background || "",
+          userId
+        );
 
-      if (agent) {
-        return {
-          message: "Team member recruited successfully",
-          teamMemberId: agent.id,
-        };
-      } else {
-        throw new Error(`Failed to queue team member recruitment: ${name}`);
+        if (agent) {
+          return {
+            message: "Team member recruited successfully",
+            teamMemberId: agent.id,
+          };
+        } else {
+          throw new Error(`Failed to queue team member recruitment: ${name}`);
+        }
+      } catch (error) {
+        console.error("[RecruitTeamMemberTool] Error submitting job:", error);
+        throw new Error(
+          `Failed to recruit team member: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
-    } catch (error) {
-      console.error("[RecruitTeamMemberTool] Error submitting job:", error);
-      throw new Error(
-        `Failed to recruit team member: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  },
-});
+    },
+  });
 
-export const createTaskTool = tool({
-  description: "Create a new task that can be assigned to a team member",
-  parameters: z.object({
-    title: z.string().describe("The title of the task"),
-    description: z
-      .string()
-      .describe("Detailed description of what the task involves"),
-    ownerId: z
-      .string()
-      .optional()
-      .describe("ID of the team member that will own this task"),
-    parentId: z
-      .string()
-      .optional()
-      .describe("ID of the parent task if this is a subtask"),
-    contextId: z
-      .string()
-      .optional()
-      .describe("ID of any associated context data"),
-    status: z
-      .string()
-      .optional()
-      .describe("Initial status of the task (defaults to 'pending')"),
-  }),
-  execute: async ({
-    title,
-    description,
-    ownerId,
-    parentId,
-    contextId,
-    status,
-  }) => {
-    try {
-      const taskService = new TaskService();
-      const task = await taskService.createTask({
-        title,
-        description,
-        owner_id: ownerId,
-        parent_id: parentId,
-        context_id: contextId,
-        status,
-      });
+export const getCreateTaskTool = (userId: string) =>
+  tool({
+    description: "Create a new task that can be assigned to a team member",
+    parameters: z.object({
+      title: z.string().describe("The title of the task"),
+      description: z
+        .string()
+        .describe("Detailed description of what the task involves"),
+      ownerId: z
+        .string()
+        .optional()
+        .describe("ID of the team member that will own this task"),
+      parentId: z
+        .string()
+        .optional()
+        .describe("ID of the parent task if this is a subtask"),
+      contextId: z
+        .string()
+        .optional()
+        .describe("ID of any associated context data"),
+      status: z
+        .string()
+        .optional()
+        .describe("Initial status of the task (defaults to 'pending')"),
+    }),
+    execute: async ({
+      title,
+      description,
+      ownerId,
+      parentId,
+      contextId,
+      status,
+    }) => {
+      try {
+        const taskService = new TaskService();
+        const task = await taskService.createTask({
+          title,
+          description,
+          owner_id: ownerId,
+          parent_id: parentId,
+          context_id: contextId,
+          status,
+          owner: userId,
+        });
 
-      if (task) {
-        return {
-          message: "Task created successfully",
-          taskId: task.id,
-        };
-      } else {
-        throw new Error(`Failed to create task: ${title}`);
+        if (task) {
+          return {
+            message: "Task created successfully",
+            taskId: task.id,
+          };
+        } else {
+          throw new Error(`Failed to create task: ${title}`);
+        }
+      } catch (error) {
+        console.error("[CreateTaskTool] Error creating task:", error);
+        throw new Error(
+          `Failed to create task: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
-    } catch (error) {
-      console.error("[CreateTaskTool] Error creating task:", error);
-      throw new Error(
-        `Failed to create task: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  },
-});
+    },
+  });
 
 export const updateTaskTool = tool({
   description: "Update an existing task's details",
@@ -203,7 +207,7 @@ export const getTaskTool = tool({
   },
 });
 
-export const getTasksByOwnerTool = tool({
+export const getTasksByTeamMemberTool = tool({
   description:
     "Get all tasks assigned to a specific team member (such as yourself)",
   parameters: z.object({

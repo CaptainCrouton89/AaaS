@@ -28,10 +28,17 @@ export class ProgrammingTaskService {
   /**
    * Create a new programming task
    * @param task The programming task data
+   * @param ownerId The ID of the owner (defaults to "system")
    * @returns The created programming task
    */
-  public async createProgrammingTask(task: Partial<ProgrammingTask>) {
-    return await programmingTaskRepository.create(task);
+  public async createProgrammingTask(
+    task: Partial<ProgrammingTask>,
+    ownerId: string = "system"
+  ) {
+    return await programmingTaskRepository.create({
+      ...task,
+      owner: ownerId,
+    });
   }
 
   /**

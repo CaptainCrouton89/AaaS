@@ -5,14 +5,14 @@ import { getSystemPrompt } from "../lib/prompts/agent.prompt";
 import { agentRepository } from "../repositories";
 import { toolRegistry, ToolResult } from "../tools/async-tools/baseTool";
 import {
-  createTaskTool,
   delegateTaskTool,
   deleteTaskTool,
+  getCreateTaskTool,
   getMessageTeamMemberTool,
+  getRecruitTeamMemberTool,
   getSubtasksTool,
-  getTasksByOwnerTool,
+  getTasksByTeamMemberTool,
   getTaskTool,
-  recruitTeamMemberTool,
   updateTaskTool,
 } from "../tools/delegation";
 import { Agent, Task } from "../types/database";
@@ -46,19 +46,24 @@ export class AgentService {
    * Create an agent
    * @param name The agent name
    * @param description The agent description
+   * @param agentType The agent type
+   * @param background Additional background information for the agent
+   * @param ownerId The ID of the owner
    * @returns The created agent
    */
   public async createAgent(
     name: string,
     goal: string,
     agentType: AgentType,
-    background: string
+    background: string,
+    ownerId: string = "system"
   ) {
     return await agentRepository.create({
       title: name,
       goal: goal,
       agent_type: agentType,
       background: background,
+      owner: ownerId,
     });
   }
 
@@ -98,13 +103,13 @@ export class AgentService {
           deepSearch: toolRegistry
             .getTool("deepSearch")!
             .getSynchronousTool(agentId),
-          createAgent: recruitTeamMemberTool,
-          createTask: createTaskTool,
+          recruitTeamMember: getRecruitTeamMemberTool(agentId),
+          createTask: getCreateTaskTool(agentId),
           getTask: getTaskTool,
           updateTask: updateTaskTool,
           deleteTask: deleteTaskTool,
-          getTasksByOwner: getTasksByOwnerTool,
-          getSubtasksTool: getSubtasksTool,
+          getTasksByTeamMemberTool,
+          getSubtasks: getSubtasksTool,
           delegateTask: delegateTaskTool,
           messageTeamMember: getMessageTeamMemberTool(agentId),
         },

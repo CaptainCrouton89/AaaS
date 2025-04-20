@@ -34,7 +34,13 @@ export const taskController = {
    * Create a new task
    */
   createTask: asyncHandler(async (req: Request, res: Response) => {
-    const task = await taskService.createTask(req.body);
+    // Add owner field from user context
+    const taskData = {
+      ...req.body,
+      owner: req.user?.id || "system",
+    };
+
+    const task = await taskService.createTask(taskData);
     res.status(201).json({ success: true, data: task });
   }),
 

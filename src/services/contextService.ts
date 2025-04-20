@@ -28,10 +28,17 @@ export class ContextService {
   /**
    * Create a new context
    * @param context The context data
+   * @param ownerId The ID of the owner (defaults to "system")
    * @returns The created context
    */
-  public async createContext(context: Partial<Context>) {
-    return await contextRepository.create(context);
+  public async createContext(
+    context: Partial<Context>,
+    ownerId: string = "system"
+  ) {
+    return await contextRepository.create({
+      ...context,
+      owner: ownerId,
+    });
   }
 
   /**
