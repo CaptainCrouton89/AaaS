@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { agentService, taskService } from "../services";
 import contextService, { ContextService } from "../services/contextService";
+import { ToolResult } from "./async-tools/baseTool";
 
 /**
  * Tool to create a new context
@@ -16,20 +18,19 @@ export const getCreateContextTool = (userId: string, agentId: string) =>
         .string()
         .describe("Text content of the context (information, data, etc.)"),
     }),
-    execute: async ({ textData }) => {
+    execute: async ({ textData }): Promise<ToolResult> => {
       try {
         const contextService = new ContextService();
-        const context = await contextService.createContext(
-          {
-            text_data: textData,
-          },
-          userId
-        );
+        const context = await contextService.createContext({
+          text_data: textData,
+          owner: userId,
+        });
 
         if (context) {
           return {
-            message: "Context created successfully",
-            contextId: context.id,
+            success: true,
+            data: `Context with id ${context.id} created successfully`,
+            type: "markdown",
           };
         } else {
           throw new Error(`Failed to create context`);
@@ -53,14 +54,16 @@ export const getContextTool = tool({
   parameters: z.object({
     contextId: z.string().describe("ID of the context to retrieve"),
   }),
-  execute: async ({ contextId }) => {
+  execute: async ({ contextId }): Promise<ToolResult> => {
     try {
       const contextService = new ContextService();
       const context = await contextService.getContextById(contextId);
 
       if (context) {
         return {
-          context: context,
+          success: true,
+          data: context,
+          type: "json",
         };
       } else {
         throw new Error(`Context not found: ${contextId}`);
@@ -76,6 +79,48 @@ export const getContextTool = tool({
   },
 });
 
+export const getContextByTaskIdTool = tool({
+  description: "Get context by task ID",
+  parameters: z.object({
+    taskId: z.string().describe("ID of the task to retrieve context for"),
+  }),
+  execute: async ({ taskId }): Promise<ToolResult> => {
+    const task = await taskService.getTaskById(taskId);
+    if (task) {
+      return {
+        success: true,
+        data: task.context.text_data,
+        type: "markdown",
+      };
+    } else {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+  },
+});
+
+export const getGatherFullContextTool = (agentId: string) =>
+  tool({
+    description: "Look at the full picture. Gathers all context from all tasks",
+    parameters: z.object({}),
+    execute: async (): Promise<ToolResult> => {
+      const allContext = await contextService.getAllContextsByAgentId(agentId);
+
+      if (allContext) {
+        return {
+          success: true,
+          data: allContext,
+          type: "json",
+        };
+      } else {
+        return {
+          success: true,
+          data: "No context found for agent: ${agentId}",
+          type: "markdown",
+        };
+      }
+    },
+  });
+
 /**
  * Tool to update an existing context
  */
@@ -85,7 +130,7 @@ export const updateContextTool = tool({
     contextId: z.string().describe("ID of the context to update"),
     textData: z.string().describe("New text content for the context"),
   }),
-  execute: async ({ contextId, textData }) => {
+  execute: async ({ contextId, textData }): Promise<ToolResult> => {
     try {
       const contextService = new ContextService();
       const context = await contextService.updateContext(contextId, {
@@ -94,8 +139,9 @@ export const updateContextTool = tool({
 
       if (context) {
         return {
-          message: "Context updated successfully",
-          contextId: context.id,
+          success: true,
+          data: `Context with id ${context.id} updated successfully`,
+          type: "markdown",
         };
       } else {
         throw new Error(`Context not found: ${contextId}`);
@@ -119,14 +165,16 @@ export const deleteContextTool = tool({
   parameters: z.object({
     contextId: z.string().describe("ID of the context to delete"),
   }),
-  execute: async ({ contextId }) => {
+  execute: async ({ contextId }): Promise<ToolResult> => {
     try {
       const contextService = new ContextService();
       const success = await contextService.deleteContext(contextId);
 
       if (success) {
         return {
-          message: "Context deleted successfully",
+          success: true,
+          data: `Context with id ${contextId} deleted successfully`,
+          type: "markdown",
         };
       } else {
         throw new Error(`Failed to delete context: ${contextId}`);
@@ -151,7 +199,7 @@ export const updateTaskContextTool = tool({
     taskId: z.string().describe("ID of the task to update"),
     contextId: z.string().describe("ID of the context to assign to the task"),
   }),
-  execute: async ({ taskId, contextId }) => {
+  execute: async ({ taskId, contextId }): Promise<ToolResult> => {
     try {
       const { TaskService } = require("../services/taskService");
       const taskService = new TaskService();
@@ -170,8 +218,9 @@ export const updateTaskContextTool = tool({
 
       if (task) {
         return {
-          message: "Task context updated successfully",
-          taskId: task.id,
+          success: true,
+          data: `Task with id ${task.id} updated successfully`,
+          type: "markdown",
         };
       } else {
         throw new Error(`Task not found: ${taskId}`);
@@ -196,7 +245,7 @@ export const updateAgentContextTool = tool({
     agentId: z.string().describe("ID of the agent to update"),
     contextId: z.string().describe("ID of the context to assign to the agent"),
   }),
-  execute: async ({ agentId, contextId }) => {
+  execute: async ({ agentId, contextId }): Promise<ToolResult> => {
     try {
       const { AgentService } = require("../services/agentService");
       const agentService = new AgentService();
@@ -215,8 +264,9 @@ export const updateAgentContextTool = tool({
 
       if (agent) {
         return {
-          message: "Agent context updated successfully",
-          agentId: agent.id,
+          success: true,
+          data: `Agent with id ${agent.id} updated successfully`,
+          type: "markdown",
         };
       } else {
         throw new Error(`Agent not found: ${agentId}`);
@@ -235,17 +285,54 @@ export const updateAgentContextTool = tool({
 /**
  * Tool to append to context
  */
-export const appendToContextTool = tool({
-  description: "Append to context",
-  parameters: z.object({
-    contextId: z.string().describe("ID of the context to append to"),
-    textData: z.string().describe("Text data to append to the context"),
-  }),
-  execute: async ({ contextId, textData }) => {
-    const context = await contextService.appendToContext(contextId, textData);
+// export const appendToContextTool = tool({
+//   description: "Append to context",
+//   parameters: z.object({
+//     contextId: z.string().describe("ID of the context to append to"),
+//     textData: z.string().describe("Text data to append to the context"),
+//   }),
+//   execute: async ({ contextId, textData }) => {
+//     const context = await contextService.appendToContext(contextId, textData);
 
-    return {
-      message: "Context updated successfully",
-    };
-  },
-});
+//     return {
+//       message: "Context updated successfully",
+//     };
+//   },
+// });
+
+export const getShareTaskContextTool = (agentId: string) =>
+  tool({
+    description: "Share a task context with a team member",
+    parameters: z.object({
+      taskId: z.string().describe("ID of the task to share"),
+      teamMemberId: z
+        .string()
+        .describe("ID of the team member to share the task context with"),
+    }),
+    execute: async ({ taskId, teamMemberId }): Promise<ToolResult> => {
+      const task = await taskService.getTaskById(taskId);
+      const teamMember = await agentService.getAgentById(teamMemberId);
+
+      if (!task) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      if (!teamMember) {
+        throw new Error(`Team member not found: ${teamMemberId}`);
+      }
+
+      const result = await agentService.sendMessageFromAgentToAgent(
+        agentId,
+        teamMemberId,
+        `Here's some context for the task: ${task.title} Id: ${task.context.text_data}
+        
+        Context: ${task.context.text_data}`
+      );
+
+      return {
+        success: true,
+        data: result,
+        type: "markdown",
+      };
+    },
+  });

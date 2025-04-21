@@ -4,22 +4,19 @@ import { callAsyncTool } from "../utils";
 // Interface for tool execution result
 export interface ToolResult {
   success: boolean;
-  data: unknown;
-  error?: string;
+  type: "markdown" | "json";
+  data?: string | object;
 }
 
 // Base tool class that all tools should extend
-export abstract class BaseAsyncJobTool {
+export abstract class BaseAsyncJobTool<T> {
   abstract readonly name: string;
   abstract readonly description: string;
-  abstract execute(
-    agentId: string,
-    args: Record<string, unknown>
-  ): Promise<ToolResult>;
+  abstract execute(agentId: string, args: T): Promise<ToolResult>;
   abstract getSynchronousTool(agentId: string): Tool;
 
-  callAsyncTool(args: Record<string, unknown>, agentId: string) {
-    return callAsyncTool({
+  callAsyncTool(args: T, agentId: string) {
+    return callAsyncTool<T>({
       toolName: this.name,
       args: args,
       agentId: agentId,
@@ -31,7 +28,7 @@ export abstract class BaseAsyncJobTool {
 // Registry to store and retrieve tools
 class ToolRegistry {
   private static instance: ToolRegistry;
-  private tools: Map<string, BaseAsyncJobTool> = new Map();
+  private tools: Map<string, BaseAsyncJobTool<any>> = new Map();
 
   private constructor() {}
 
@@ -44,7 +41,7 @@ class ToolRegistry {
   }
 
   // Register a tool
-  public registerTool(tool: BaseAsyncJobTool): void {
+  public registerTool(tool: BaseAsyncJobTool<any>): void {
     if (this.tools.has(tool.name)) {
       throw new Error(`Tool with name ${tool.name} is already registered.`);
     }
@@ -52,7 +49,7 @@ class ToolRegistry {
   }
 
   // Get a tool by name
-  public getTool(name: string): BaseAsyncJobTool | undefined {
+  public getTool(name: string): BaseAsyncJobTool<any> | undefined {
     return this.tools.get(name);
   }
 
@@ -62,7 +59,7 @@ class ToolRegistry {
   }
 
   // Get all registered tools
-  public getAllTools(): BaseAsyncJobTool[] {
+  public getAllTools(): BaseAsyncJobTool<any>[] {
     return Array.from(this.tools.values());
   }
 }
@@ -71,30 +68,36 @@ class ToolRegistry {
 export const toolRegistry = ToolRegistry.getInstance();
 
 // Function to execute a tool by name
-export async function executeTool(
+export async function executeTool<T>(
   toolName: string,
   agentId: string,
-  args: Record<string, unknown>
+  args: T
 ): Promise<ToolResult> {
   const tool = toolRegistry.getTool(toolName);
 
   if (!tool) {
     return {
       success: false,
-      data: null,
-      error: `Tool '${toolName}' not found.`,
+      type: "markdown",
+      data: `Tool '${toolName}' not found.`,
     };
   }
 
   try {
-    return await tool.execute(agentId, args);
+    return await tool.execute(agentId, args as T);
   } catch (error) {
     return {
       success: false,
-      data: null,
-      error: `Error executing tool '${toolName}': ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      type: "json",
+      data: JSON.stringify({
+        error: `Error executing tool '${toolName}': ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        stack: error instanceof Error ? error.stack : String(error),
+        toolName: toolName,
+        agentId: agentId,
+        args: args,
+      }),
     };
   }
 }

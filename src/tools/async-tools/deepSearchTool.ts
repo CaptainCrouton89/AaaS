@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import axios from "axios";
 import { z } from "zod";
-import { agentService, contextService } from "../../services";
+import { contextService, taskService } from "../../services";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
 // Interface for Perplexity API Response
@@ -24,7 +24,14 @@ interface PerplexityResponse {
   };
 }
 
-export class DeepSearchTool extends BaseAsyncJobTool {
+type DeepSearchToolArgs = {
+  query: string;
+  taskId: string;
+  model?: string;
+  contextSize?: string;
+};
+
+export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
   readonly name = "deepSearch";
   readonly description =
     "Performs deep research and search on a topic using Perplexity API";
@@ -92,13 +99,10 @@ export class DeepSearchTool extends BaseAsyncJobTool {
     agentId: string,
     {
       query,
+      taskId,
       model = "sonar",
       contextSize = "medium",
-    }: {
-      query: string;
-      model?: string;
-      contextSize?: string;
-    }
+    }: DeepSearchToolArgs
   ): Promise<ToolResult> {
     try {
       console.log(`deepSearchTool executing with query: ${query}`);
@@ -111,26 +115,25 @@ export class DeepSearchTool extends BaseAsyncJobTool {
       );
 
       console.log("deepSearchTool executed successfully");
-      const agent = await agentService.getAgentById(agentId);
-      if (!agent || !agent.context_id) {
-        throw new Error("Agent not found or context_id is null");
+      const task = await taskService.getTaskById(taskId);
+      if (!task) {
+        throw new Error("Task not found");
       }
-      await contextService.appendToContext(agent.context_id, researchResults);
+      await contextService.appendToContext(task.context_id, researchResults);
 
       return {
         success: true,
-        data: {
-          type: "text",
-          text: "Query results added to system context.",
-          timestamp: new Date().toISOString(),
-        },
+        type: "markdown",
+        data: "Query results added to task context.",
       };
     } catch (error) {
       console.error("Error in deepSearchTool:", error);
       return {
         success: false,
-        data: null,
-        error: error instanceof Error ? error.message : String(error),
+        type: "markdown",
+        data: `Error in deepSearchTool: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
@@ -138,7 +141,7 @@ export class DeepSearchTool extends BaseAsyncJobTool {
   getSynchronousTool(agentId: string) {
     return tool({
       description:
-        "Performs deep research on topics using the Perplexity AI API. Provides comprehensive search results and information synthesis.",
+        "Performs deep research on topics using the Perplexity AI API and adds the results to the task context.",
       parameters: z.object({
         query: z
           .string()
@@ -162,21 +165,28 @@ export class DeepSearchTool extends BaseAsyncJobTool {
           .default("medium")
           .describe("How much search context to retrieve (default: medium)"),
       }),
-      execute: async ({ query, model, contextSize, taskId }) => {
+      execute: async ({
+        query,
+        model,
+        contextSize,
+        taskId,
+      }): Promise<ToolResult> => {
         try {
-          // Post the job to the job queue
           const response: JobResponse = await this.callAsyncTool(
-            { query, model, contextSize, taskId },
+            {
+              query,
+              model,
+              contextSize,
+              taskId,
+            },
             agentId
           );
 
-          console.log("deepSearchTool synchronous tool response", response);
-
           if (response.success) {
             return {
-              message:
-                "Your research request has been queued and is being processed. Results will be delivered when ready.",
-              toolCallId: response.jobId,
+              success: true,
+              data: "Your research request has been queued and is being processed. Results will be delivered when ready.",
+              type: "markdown",
             };
           } else {
             throw new Error(

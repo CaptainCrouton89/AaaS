@@ -9,52 +9,11 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      agent_message_history: {
-        Row: {
-          agent_id: string
-          content: string
-          created_at: string
-          id: string
-          metadata: Json | null
-          owner: string | null
-          role: string
-          updated_at: string
-        }
-        Insert: {
-          agent_id: string
-          content: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          owner?: string | null
-          role: string
-          updated_at?: string
-        }
-        Update: {
-          agent_id?: string
-          content?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          owner?: string | null
-          role?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_message_history_agent_id_fkey"
-            columns: ["agent_id"]
-            isOneToOne: false
-            referencedRelation: "agents"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       agents: {
         Row: {
           agent_type: string
           background: string | null
-          context_id: string
+          boss_id: string | null
           created_at: string | null
           goal: string
           id: string
@@ -67,7 +26,7 @@ export type Database = {
         Insert: {
           agent_type: string
           background?: string | null
-          context_id: string
+          boss_id?: string | null
           created_at?: string | null
           goal: string
           id?: string
@@ -80,7 +39,7 @@ export type Database = {
         Update: {
           agent_type?: string
           background?: string | null
-          context_id?: string
+          boss_id?: string | null
           created_at?: string | null
           goal?: string
           id?: string
@@ -92,10 +51,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "agents_context_id_fkey"
-            columns: ["context_id"]
+            foreignKeyName: "agents_boss_id_fkey"
+            columns: ["boss_id"]
             isOneToOne: false
-            referencedRelation: "contexts"
+            referencedRelation: "agents"
             referencedColumns: ["id"]
           },
         ]

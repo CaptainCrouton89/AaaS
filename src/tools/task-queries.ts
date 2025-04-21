@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { TaskService } from "../services/taskService";
+import { ToolResult } from "./async-tools/baseTool";
 
 /**
  * Tool to get tasks assigned to a team member
@@ -13,14 +14,16 @@ export const getTasksByTeamMemberTool = tool({
       .string()
       .describe("ID of the team member whose tasks to retrieve"),
   }),
-  execute: async ({ ownerId }) => {
+  execute: async ({ ownerId }): Promise<ToolResult> => {
     try {
       const taskService = new TaskService();
       const tasks = await taskService.getTasksByOwnerId(ownerId);
 
       if (tasks) {
         return {
-          tasks: tasks,
+          success: true,
+          data: tasks,
+          type: "json",
         };
       } else {
         throw new Error(`Failed to get tasks: ${ownerId}`);
@@ -46,14 +49,16 @@ export const getSubtasksTool = tool({
       .string()
       .describe("ID of the parent task whose subtasks to retrieve"),
   }),
-  execute: async ({ parentTaskId }) => {
+  execute: async ({ parentTaskId }): Promise<ToolResult> => {
     try {
       const taskService = new TaskService();
       const subtasks = await taskService.getSubtasks(parentTaskId);
 
       if (subtasks) {
         return {
-          subtasks: subtasks,
+          success: true,
+          data: subtasks,
+          type: "json",
         };
       } else {
         throw new Error(`Failed to get subtasks: ${parentTaskId}`);
@@ -80,7 +85,7 @@ export const delegateTaskTool = tool({
       .string()
       .describe("ID of the team member to delegate the task to"),
   }),
-  execute: async ({ taskId, teamMemberId }) => {
+  execute: async ({ taskId, teamMemberId }): Promise<ToolResult> => {
     try {
       const taskService = new TaskService();
       const task = await taskService.updateTask(taskId, {
@@ -89,8 +94,9 @@ export const delegateTaskTool = tool({
 
       if (task) {
         return {
-          message: "Task delegated successfully",
-          taskId: task.id,
+          success: true,
+          data: `Task with id ${task.id} delegated successfully`,
+          type: "markdown",
         };
       } else {
         throw new Error(`Failed to delegate task: ${taskId}`);

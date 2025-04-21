@@ -15,8 +15,6 @@ export type Context = Database["public"]["Tables"]["contexts"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type ProgrammingTask =
   Database["public"]["Tables"]["programming_tasks"]["Row"];
-export type AgentMessageHistory =
-  Database["public"]["Tables"]["agent_message_history"]["Row"];
 
 export type AgentInsert = Database["public"]["Tables"]["agents"]["Insert"];
 export type AgentUpdate = Database["public"]["Tables"]["agents"]["Update"];
@@ -32,19 +30,14 @@ export type ProgrammingTaskInsert =
 export type ProgrammingTaskUpdate =
   Database["public"]["Tables"]["programming_tasks"]["Update"];
 
-export type AgentWithContext = Agent & {
-  context: Context;
-};
-
 export type AgentWithTasks = Agent & {
-  tasks: Task[];
-};
-
-export type AgentWithTasksAndContext = Agent & {
   tasks: TaskWithSubTasks[];
-  context: Context;
 };
 
 export type TaskWithSubTasks = Task & {
   sub_tasks: TaskWithSubTasks[];
+};
+
+export type TaskWithContext = Task & {
+  context: Context;
 };

@@ -1,16 +1,15 @@
 import { openai } from "@ai-sdk/openai";
 import { CoreMessage, generateText } from "ai";
-import { AgentType } from "../constants/agents";
 import {
   getAgentTools,
   getBaseSystemPrompt,
+  getInitializationPrompt,
 } from "../lib/prompts/agent.prompt";
 import { agentRepository } from "../repositories";
 import { ToolResult } from "../tools/async-tools/baseTool";
-import { Agent, AgentWithTasksAndContext, Task } from "../types/database";
+import { Agent, AgentInsert, AgentWithTasks, Task } from "../types/database";
 import { AsyncToolResponse } from "../types/dto";
 import agentMessageHistoryService from "./agentMessageHistoryService";
-import { contextService } from "./index";
 import taskService from "./taskService";
 
 interface WebhookJob {
@@ -27,7 +26,6 @@ const getAsyncToolResponseFromWebhookJob = (
     toolName: webhookJob.toolName,
     toolCallId: webhookJob.toolCallId,
     data: webhookJob.body.data,
-    error: webhookJob.body.error,
   };
 };
 
@@ -37,33 +35,49 @@ const getAsyncToolResponseFromWebhookJob = (
 export class AgentService {
   /**
    * Create an agent
-   * @param name The agent name
-   * @param description The agent description
-   * @param agentType The agent type
-   * @param background Additional background information for the agent
-   * @param ownerId The ID of the owner
+   * @param data The agent data
    * @returns The created agent
    */
-  public async createAgent(
-    ownerId: string = "system",
-    name: string,
-    goal: string,
-    agentType: AgentType,
-    background: string,
-    contextId: string | undefined = undefined
-  ) {
-    if (!contextId) {
-      const newContext = await contextService.createContext({}, ownerId);
-      contextId = newContext.id;
+  public async createAgent(data: AgentInsert) {
+    return await agentRepository.create(data);
+  }
+
+  public async initializeAgent(agentId: string) {
+    const agent = await this.getAgentById(agentId);
+    if (!agent) {
+      throw new Error("Agent not found");
     }
 
-    return await agentRepository.create({
-      title: name,
-      goal: goal,
-      agent_type: agentType,
-      background: background,
-      owner: ownerId,
-      context_id: contextId,
+    await this.chatWithAgent(agentId, {
+      role: "user",
+      content: getInitializationPrompt(agent),
+    });
+
+    await this.chatWithAgent(agentId, {
+      role: "user",
+      content: `Begin working on your tasks.`,
+    });
+  }
+
+  public async sendMessageFromAgentToAgent(
+    fromAgentId: string,
+    toAgentId: string,
+    message: string
+  ) {
+    const fromAgent = await this.getAgentById(fromAgentId);
+    const toAgent = await this.getAgentById(toAgentId);
+
+    if (!fromAgent) {
+      throw new Error(`From agent not found: ${fromAgentId}`);
+    }
+
+    if (!toAgent) {
+      throw new Error(`To agent not found: ${toAgentId}`);
+    }
+
+    return await this.chatWithAgent(toAgentId, {
+      role: "user",
+      content: `Team Member ${fromAgentId} said: ${message}`,
     });
   }
 
@@ -92,6 +106,8 @@ export class AgentService {
 
     console.log("agent owner", agent.owner);
 
+    console.log("Sending new message", message);
+
     try {
       // Generate a complete text response using OpenAI
       const result = await generateText({
@@ -100,6 +116,9 @@ export class AgentService {
         messages: [...existingMessages, message],
         tools: getAgentTools(agent),
         maxSteps: 100, // Allow multiple steps for tool use
+        onStepFinish: (step) => {
+          // agentMessageHistoryService.addMessages;
+        },
       });
 
       const { text, usage, response } = result;
@@ -129,25 +148,15 @@ export class AgentService {
    * @param agentId The agent ID
    * @returns The agent or null if not found
    */
-  public async getAgentById(
-    agentId: string
-  ): Promise<AgentWithTasksAndContext | null> {
+  public async getAgentById(agentId: string): Promise<AgentWithTasks | null> {
     const agent = await agentRepository.findById(agentId);
     if (!agent) {
       throw new Error("Agent not found");
     }
-    if (!agent.context_id) {
-      throw new Error("Agent has no context");
-    }
-    const context = await contextService.getContextById(agent.context_id);
-
-    if (!context) {
-      throw new Error("Agent has no context");
-    }
 
     const tasks = await taskService.getTasksByOwnerId(agentId);
 
-    return { ...agent, context, tasks };
+    return { ...agent, tasks };
   }
 
   /**
@@ -308,6 +317,22 @@ export class AgentService {
       console.error("Error in updateAgent:", error);
       throw error;
     }
+  }
+
+  public async appendToLogs(agentId: string, message: string) {
+    const agent = await this.getAgentById(agentId);
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    const logs = agent.logs?.split("\n") || [];
+    logs.push(`${new Date().toISOString().split("T")[0]}: ${message}`);
+
+    const newLogs = logs.slice(-50);
+
+    await this.updateAgent(agentId, {
+      logs: newLogs?.join("\n"),
+    });
   }
 }
 

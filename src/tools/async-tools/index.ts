@@ -2,7 +2,6 @@ import { toolRegistry } from "./baseTool";
 
 // Import all tools to make sure they are registered
 import "./deepSearchTool";
-import "./helloWorldTool";
 
 // Export for external use
 export { toolRegistry };

@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { contextRepository } from "../repositories";
-import { Context } from "../types/database";
+import { Context, ContextInsert } from "../types/database";
+import taskService from "./taskService";
 
 dotenv.config();
 
@@ -8,6 +9,16 @@ dotenv.config();
  * Service to handle context-related operations
  */
 export class ContextService {
+  public async getAllContextsByAgentId(agentId: string) {
+    const tasks = await taskService.getTasksByOwnerId(agentId);
+    const allContext = [];
+    for (const task of tasks) {
+      const context = await this.getContextById(task.context_id);
+      allContext.push(`<${task.title}> ${context?.text_data} </${task.title}>`);
+    }
+    return allContext.join("\n");
+  }
+
   /**
    * Get a context by its ID
    * @param contextId The context ID
@@ -31,14 +42,8 @@ export class ContextService {
    * @param ownerId The ID of the owner (defaults to "system")
    * @returns The created context
    */
-  public async createContext(
-    context: Partial<Context>,
-    ownerId: string = "system"
-  ) {
-    return await contextRepository.create({
-      ...context,
-      owner: ownerId,
-    });
+  public async createContext(context: ContextInsert) {
+    return await contextRepository.create(context);
   }
 
   /**

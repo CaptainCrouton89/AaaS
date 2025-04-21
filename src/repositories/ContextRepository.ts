@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { Context } from "../types/database";
+import { Context, ContextInsert } from "../types/database";
 import { BaseRepository } from "./BaseRepository";
 
 /**
@@ -46,7 +46,7 @@ export class ContextRepository implements BaseRepository<Context> {
    * @param data The context data
    * @returns The created context
    */
-  async create(data: Partial<Context>): Promise<Context> {
+  async create(data: ContextInsert): Promise<Context> {
     const { data: newContext, error } = await supabase
       .from("contexts")
       .insert(data)

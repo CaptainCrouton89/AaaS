@@ -1,5 +1,10 @@
 import { supabase } from "../lib/supabase";
-import { Task, TaskInsert, TaskWithSubTasks } from "../types/database";
+import {
+  Task,
+  TaskInsert,
+  TaskWithContext,
+  TaskWithSubTasks,
+} from "../types/database";
 import { BaseRepository } from "./BaseRepository";
 
 /**
@@ -11,10 +16,10 @@ export class TaskRepository implements BaseRepository<Task> {
    * @param id The task ID
    * @returns The task or null if not found
    */
-  async findById(id: string): Promise<Task | null> {
+  async findById(id: string): Promise<TaskWithContext | null> {
     const { data, error } = await supabase
       .from("tasks")
-      .select("*")
+      .select("*, context:contexts(*)")
       .eq("id", id)
       .single();
 

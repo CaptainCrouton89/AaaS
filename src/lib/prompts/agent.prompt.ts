@@ -1,18 +1,21 @@
 import { ToolSet } from "ai";
 import { AgentType } from "../../constants/agents";
 import {
-  delegateTaskTool,
   getSubtasksTool,
   getTasksByTeamMemberTool,
   removeTeamMemberTool,
   updateTaskContextTool,
 } from "../../tools";
+import { getWriteToLogsTool } from "../../tools/agent";
 import { toolRegistry } from "../../tools/async-tools";
 import {
-  appendToContextTool,
+  // appendToContextTool,
   deleteContextTool,
+  getContextByTaskIdTool,
   getContextTool,
   getCreateContextTool,
+  getGatherFullContextTool,
+  getShareTaskContextTool,
   updateAgentContextTool,
   updateContextTool,
 } from "../../tools/context";
@@ -26,10 +29,10 @@ import {
   getMessageTeamMemberTool,
   getRecruitTeamMemberTool,
 } from "../../tools/team-members";
-import { writeReportTool } from "../../tools/write-report";
-import { Agent, AgentWithTasksAndContext } from "../../types/database";
+import { getWriteReportTool } from "../../tools/write-report";
+import { Agent, AgentWithTasks } from "../../types/database";
 
-export const getBaseSystemPrompt = (agent: AgentWithTasksAndContext) => {
+export const getBaseSystemPrompt = (agent: AgentWithTasks) => {
   return `
 <Team Member>
   <Team Member ID>${agent.id}</Team Member ID>
@@ -38,11 +41,6 @@ export const getBaseSystemPrompt = (agent: AgentWithTasksAndContext) => {
   <Goal>${agent.goal}</Goal>
   <Background>${agent.background}</Background>
 </Team Member>
-
-<Context>
-  <Context ID>${agent.context.id}</Context ID>
-  <Context>${agent.context.text_data}</Context>
-</Context>
 
 <Tasks>
 ${agent.tasks
@@ -54,11 +52,26 @@ ${agent.tasks
     <Description>${task.description}</Description>
     <Complexity>${task.complexity}</Complexity>
     <Context ID>${task.context_id}</Context ID>
+    ${task.sub_tasks
+      .map(
+        (subTask) => `
+      <SubTask>
+        <SubTask ID>${subTask.id}</SubTask ID>
+        <Title>${subTask.title}</Title>
+        <Description>${subTask.description}</Description>
+      </SubTask>
+    `
+      )
+      .join("\n")}
   </Task>
 `
   )
   .join("\n")}
 </Tasks>
+
+<Memory>
+  ${agent.logs}
+</Memory>
 
 <Agent Instructions>
 ${getAgentTemplate(agent.agent_type as AgentType)}
@@ -87,32 +100,37 @@ export const getAgentTemplate = (agentType: AgentType) => {
   }
 };
 
+const defaultAgentTools = (agentId: string) => ({
+  messageTeamMember: getMessageTeamMemberTool(agentId),
+  getContextByContextId: getContextTool,
+  getContextByTaskId: getContextByTaskIdTool,
+  updateContext: updateContextTool,
+  // appendToContext: appendToContextTool,
+  createTask: getCreateTaskTool(agentId),
+  getTaskByTaskId: getTaskTool,
+  updateTask: updateTaskTool,
+  deleteTask: deleteTaskTool,
+  getTasksByTeamMember: getTasksByTeamMemberTool,
+  getSubtasks: getSubtasksTool,
+  shareTaskContextTool: getShareTaskContextTool(agentId),
+  gatherFullContext: getGatherFullContextTool(agentId),
+  writeToMemory: getWriteToLogsTool(agentId),
+});
+
 export const getAgentTools = (agent: Agent): ToolSet => {
   switch (agent.agent_type) {
     case AgentType.RESEARCH_ASSISTANT:
       return {
+        ...defaultAgentTools(agent.id),
         deepSearch: toolRegistry
           .getTool("deepSearch")!
           .getSynchronousTool(agent.id),
-        messageTeamMember: getMessageTeamMemberTool(agent.id),
-        getContext: getContextTool,
-        updateContext: updateContextTool,
-        appendToContext: appendToContextTool,
-        createTask: getCreateTaskTool(agent.id),
-        getTask: getTaskTool,
-        updateTask: updateTaskTool,
-        deleteTask: deleteTaskTool,
+        writeReport: getWriteReportTool(agent.id),
       };
     case AgentType.PROJECT_MANAGER:
       return {
-        recruitTeamMember: getRecruitTeamMemberTool(agent.owner),
-        createTask: getCreateTaskTool(agent.id),
-        getTask: getTaskTool,
-        updateTask: updateTaskTool,
-        deleteTask: deleteTaskTool,
-        getTasksByTeamMember: getTasksByTeamMemberTool,
-        getSubtasks: getSubtasksTool,
-        delegateTask: delegateTaskTool,
+        ...defaultAgentTools(agent.id),
+        recruitTeamMember: getRecruitTeamMemberTool(agent.owner, agent.id),
         messageTeamMember: getMessageTeamMemberTool(agent.id),
         removeTeamMember: removeTeamMemberTool,
         // Context management tools
@@ -120,23 +138,11 @@ export const getAgentTools = (agent: Agent): ToolSet => {
         getContext: getContextTool,
         updateContext: updateContextTool,
         deleteContext: deleteContextTool,
-        appendToContext: appendToContextTool,
         updateTaskContext: updateTaskContextTool,
         updateAgentContext: updateAgentContextTool,
       };
     default:
-      return {
-        messageTeamMember: getMessageTeamMemberTool(agent.id),
-        getContext: getContextTool,
-        updateContext: updateContextTool,
-        createTask: getCreateTaskTool(agent.id),
-        getTask: getTaskTool,
-        updateTask: updateTaskTool,
-        deleteTask: deleteTaskTool,
-        getTasksByTeamMember: getTasksByTeamMemberTool,
-        getSubtasks: getSubtasksTool,
-        writeReport: writeReportTool,
-      };
+      return defaultAgentTools(agent.id);
   }
 };
 const researchAssistantTemplate = `
@@ -154,3 +160,29 @@ You have access to a variety of both synchronous and asynchronous tools. The asy
 
 The asynchronous tools will always notify you when they are complete—until then, you can assume that they are still running.
 `;
+
+export const getInitializationPrompt = (agent: Agent) => {
+  return `You are the new member of the team. 
+
+You have been tasked with the following goal:
+${agent.goal}
+
+You have the following background:
+${agent.background} 
+
+Think about your goal and break it down into smaller steps. Then create a task for each step. If tasks are complex, create more tasks to break down the complexity.
+
+${getAdditionalInstructions(agent)}
+  `;
+};
+
+export const getAdditionalInstructions = (agent: Agent) => {
+  switch (agent.agent_type) {
+    case AgentType.RESEARCH_ASSISTANT:
+      return `
+      Based off your goal, set a target depth of research to perform, and save it to your memory.
+      `;
+    default:
+      return "";
+  }
+};
