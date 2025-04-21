@@ -1,5 +1,5 @@
 import { openai } from "@ai-sdk/openai";
-import { CoreMessage, generateText } from "ai";
+import { CoreMessage, generateText, StepResult, ToolSet } from "ai";
 import {
   getAgentTools,
   getBaseSystemPrompt,
@@ -27,6 +27,16 @@ const getAsyncToolResponseFromWebhookJob = (
     toolCallId: webhookJob.toolCallId,
     data: webhookJob.body.data,
   };
+};
+
+/**
+ * Helper function to safely get a message ID, handling different message types
+ * @param message The message to get ID from
+ * @returns The message ID or undefined if not present
+ */
+const getMessageId = (message: CoreMessage): string | undefined => {
+  // Check if the message has an id property
+  return (message as any).id;
 };
 
 /**
@@ -108,6 +118,12 @@ export class AgentService {
 
     console.log("Sending new message", message);
 
+    // First store the user message right away
+    await agentMessageHistoryService.addMessages(agentId, [message]);
+
+    // Track stored message IDs to prevent duplicates
+    const storedMessageIds = new Set<string>();
+
     try {
       // Generate a complete text response using OpenAI
       const result = await generateText({
@@ -115,27 +131,27 @@ export class AgentService {
         system: getBaseSystemPrompt(agent),
         messages: [...existingMessages, message],
         tools: getAgentTools(agent),
-        maxSteps: 100, // Allow multiple steps for tool use
-        onStepFinish: (step) => {
-          // agentMessageHistoryService.addMessages;
+        maxSteps: 500, // Allow multiple steps for tool use
+        onStepFinish: async (step: StepResult<ToolSet>) => {
+          console.log("step finished", JSON.stringify(step, null, 2));
+
+          // Store step messages in history as they become available
+          if (step.response.messages && step.response.messages.length > 0) {
+            // Filter out messages that have already been stored
+            const newMessages = step.response.messages.filter((msg) => {
+              const id = getMessageId(msg);
+              if (!id) return true;
+              if (storedMessageIds.has(id)) return false;
+              storedMessageIds.add(id);
+              return true;
+            });
+            await agentMessageHistoryService.addMessages(agentId, newMessages);
+          }
         },
       });
 
       const { text, usage, response } = result;
-
-      console.log(
-        `[chatWithAgent] Generated response: "${text.substring(0, 100)}..."`
-      );
       console.log(`[chatWithAgent] Usage:`, usage);
-
-      console.warn("response", JSON.stringify(response.messages, null, 2));
-
-      // Store the message in the agent's message history
-      await agentMessageHistoryService.addMessages(agentId, [
-        message,
-        ...response.messages,
-      ]);
-
       return result;
     } catch (error) {
       console.error("Error in chatWithAgent:", error);

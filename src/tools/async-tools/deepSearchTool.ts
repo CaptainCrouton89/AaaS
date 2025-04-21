@@ -4,6 +4,76 @@ import { z } from "zod";
 import { contextService, taskService } from "../../services";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
+
+const PERPLEXITY_DOMAINS = [
+  "reddit",
+  "twitter",
+  "youtube",
+  "tiktok",
+  "instagram",
+  "wikipedia",
+  "news",
+  "academia",
+  "quora",
+  "medium",
+  "github",
+  "stackoverflow",
+  "google",
+  "jstor",
+  "pubmed",
+  "sciencedirect",
+  "arxiv",
+  "springerlink",
+  "wiley",
+  "acm",
+  "ieee",
+  "taylor",
+  "sage",
+  "projectmuse",
+  "eric",
+  "ssrn",
+  "plosone",
+  "biomedcentral",
+  "openlibhums",
+  "doaj",
+  "hal",
+  "researchgate",
+] as const;
+
+const DOMAIN_MAP: Record<(typeof PERPLEXITY_DOMAINS)[number], string> = {
+  reddit: "https://www.reddit.com",
+  twitter: "https://twitter.com",
+  youtube: "https://www.youtube.com",
+  tiktok: "https://www.tiktok.com",
+  instagram: "https://www.instagram.com",
+  wikipedia: "https://www.wikipedia.org",
+  news: "https://www.news.com",
+  academia: "https://www.academia.edu",
+  quora: "https://www.quora.com",
+  medium: "https://www.medium.com",
+  github: "https://www.github.com",
+  stackoverflow: "https://www.stackoverflow.com",
+  google: "https://scholar.google.com",
+  jstor: "https://www.jstor.org",
+  pubmed: "https://pubmed.ncbi.nlm.nih.gov",
+  sciencedirect: "https://www.sciencedirect.com",
+  arxiv: "https://arxiv.org",
+  springerlink: "https://link.springer.com",
+  wiley: "https://onlinelibrary.wiley.com",
+  acm: "https://dl.acm.org",
+  ieee: "https://ieeexplore.ieee.org",
+  taylor: "https://www.tandfonline.com",
+  sage: "https://journals.sagepub.com",
+  projectmuse: "https://muse.jhu.edu",
+  eric: "https://eric.ed.gov",
+  ssrn: "https://www.ssrn.com",
+  plosone: "https://journals.plos.org/plosone",
+  biomedcentral: "https://www.biomedcentral.com",
+  openlibhums: "https://www.openlibhums.org",
+  doaj: "https://www.doaj.org",
+  hal: "https://hal.archives-ouvertes.fr",
+  researchgate: "https://www.researchgate.net",
+};
 // Interface for Perplexity API Response
 interface PerplexityResponse {
   id: string;
@@ -29,6 +99,8 @@ type DeepSearchToolArgs = {
   taskId: string;
   model?: string;
   contextSize?: string;
+  excludeDomains?: (typeof PERPLEXITY_DOMAINS)[number][];
+  includeDomains?: (typeof PERPLEXITY_DOMAINS)[number][];
 };
 
 export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
@@ -39,7 +111,9 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
   private async callPerplexityAPI(
     query: string,
     model: string,
-    contextSize: string
+    contextSize: string,
+    excludeDomains?: (typeof PERPLEXITY_DOMAINS)[number][],
+    includeDomains?: (typeof PERPLEXITY_DOMAINS)[number][]
   ): Promise<string> {
     if (!process.env.PERPLEXITY_API_KEY) {
       throw new Error("PERPLEXITY_API_KEY environment variable is not set");
@@ -68,6 +142,11 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
           presence_penalty: 0,
           web_search_options: {
             search_context_size: contextSize,
+            search_domain_filter: [
+              ...(excludeDomains?.map((domain) => DOMAIN_MAP[domain]) || []),
+              ...(includeDomains?.map((domain) => "-" + DOMAIN_MAP[domain]) ||
+                []),
+            ],
           },
         },
         {
@@ -159,6 +238,20 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
           .describe(
             "The Perplexity model to use, in order of depth of research (default: sonar)"
           ),
+        excludeDomains: z
+          .array(z.enum(PERPLEXITY_DOMAINS))
+          .optional()
+          .default([])
+          .describe(
+            "Domains to exclude from the search results (default: empty list)"
+          ),
+        includeDomains: z
+          .array(z.enum(PERPLEXITY_DOMAINS))
+          .optional()
+          .default([])
+          .describe(
+            "Domains to include in the search results (default: empty list)"
+          ),
         contextSize: z
           .enum(["low", "medium", "high"])
           .optional()
@@ -170,6 +263,8 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
         model,
         contextSize,
         taskId,
+        excludeDomains,
+        includeDomains,
       }): Promise<ToolResult> => {
         try {
           const response: JobResponse = await this.callAsyncTool(
@@ -178,6 +273,8 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
               model,
               contextSize,
               taskId,
+              excludeDomains,
+              includeDomains,
             },
             agentId
           );
