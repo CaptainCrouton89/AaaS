@@ -38,7 +38,7 @@ ${tasks
 <Instructions>
   Outline a report based on the tasks and the full context of the tasks. If you think there's not enough information in a section, mark it as false.
 
-  Your report outline should look like this:
+  Your report outline should look like this, where the number of sections and subSections is based on the depth of the report:
 
   {
     "title": "Report Title",
@@ -58,13 +58,13 @@ ${tasks
     ]
   }
 
-Your primary goal is quality. If you think there's not enough information in a section, mark it as false. Be picky.
+Your primary goal is quality. If you think there's not enough information in a section, mark it as false. Be picky. If you think there need to be more sections or subsections, add them and mark them as needing information.
 
 The user will give you all of their research and notes. Use this to write the outline.
 </Instructions>`,
         prompt: `${allData}
         
-        Write a report with a depth of ${researchDepth}, where a depth of 1 is a high level overview and a depth of 10 is a 20 page report.`,
+        Write a report with a depth of ${researchDepth}, where a depth of 1 is a high level overview and a depth of 10 is a 20 page report. Focus on outlining just the content, skipping the introduction and conclusion.`,
         schema: z.object({
           report: z.object({
             title: z.string().describe("The title of the report"),
@@ -157,7 +157,7 @@ The user will give you all of their research and notes. Use this to write the ou
             Title: ${subSection.title}
             Description: ${subSection.description}
 
-            The detail level is ${researchDepth}, where a depth of 1 is a high level overview and a depth of 10 means this section is part ofa 20 page report.
+            The detail level is ${researchDepth}, where a depth of 1 is a high level overview and a depth of 10 means this section is part of a 20 page report. Write in a formal manner, and use citations when possible.
             `,
               schema: z.object({
                 subSectionContent: z
@@ -174,7 +174,7 @@ The user will give you all of their research and notes. Use this to write the ou
 
         const sectionRes = await generateObject({
           model: openai("gpt-4.1-nano"),
-          system: `You write introductions for sections in a report.`,
+          system: `You write headers for sections in a report.`,
           prompt: `
           <Research Data>
           ${allData}
@@ -184,12 +184,17 @@ The user will give you all of their research and notes. Use this to write the ou
             ${JSON.stringify(result.object.report, null, 2)}
           </Report Outline>
 
-          Write the introduction for the following section:
+          Write the header for the following section:
           Title: ${section.title}
           Description: ${section.description}
-          SubSections: ${writtenSubSections
+          SubSections contained within this section: 
+          <SubSections>
+          ${writtenSubSections
             .map((r) => r.object.subSectionContent)
             .join(", ")}
+          </SubSections>
+
+          Be concise and formal.
           `,
           schema: z.object({
             sectionIntroduction: z
@@ -264,13 +269,13 @@ Write a conclusion for the report titled "${result.object.report.title}".
 
       const report = `# ${result.object.report.title.trim()}
 
-${reportIntroductionTitle.trim()}
+## ${reportIntroductionTitle.trim()}
 
 ${reportIntroduction.trim()}
 
 ${markdown.trim()}
 
-${reportConclusionTitle.trim()}
+## ${reportConclusionTitle.trim()}
 
 ${reportConclusion.trim()}`;
 

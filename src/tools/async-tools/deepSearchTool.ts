@@ -54,7 +54,7 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
             {
               role: "system",
               content:
-                "You are a helpful research assistant. Provide detailed, accurate information with citations when appropriate.",
+                "You are an expert researcher in your field. Provide detailed, accurate information with citations when appropriate.",
             },
             {
               role: "user",
@@ -62,7 +62,7 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
             },
           ],
           temperature: 0.2,
-          max_tokens: 2000,
+          max_tokens: 10000,
           top_p: 0.9,
           frequency_penalty: 1,
           presence_penalty: 0,
