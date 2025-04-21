@@ -8,7 +8,6 @@ import {
 import { agentRepository } from "../repositories";
 import { ToolResult } from "../tools/async-tools/baseTool";
 import { Agent, AgentInsert, AgentWithTasks, Task } from "../types/database";
-import { AsyncToolResponse } from "../types/dto";
 import agentMessageHistoryService from "./agentMessageHistoryService";
 import taskService from "./taskService";
 
@@ -18,14 +17,13 @@ interface WebhookJob {
   body: ToolResult;
 }
 
-const getAsyncToolResponseFromWebhookJob = (
-  webhookJob: WebhookJob
-): AsyncToolResponse => {
+const getAsyncToolResponseFromWebhookJob = (webhookJob: WebhookJob) => {
   return {
     success: webhookJob.body.success,
     toolName: webhookJob.toolName,
     toolCallId: webhookJob.toolCallId,
     data: webhookJob.body.data,
+    nextSteps: webhookJob.body.nextSteps,
   };
 };
 
@@ -97,7 +95,11 @@ export class AgentService {
    * @param messages Previous message history
    * @returns A complete text response from the agent
    */
-  public async chatWithAgent(agentId: string, message: CoreMessage) {
+  public async chatWithAgent(
+    agentId: string,
+    message: CoreMessage,
+    nextSteps?: string
+  ) {
     console.log(`[chatWithAgent] Processing chat for agent: ${agentId}`);
     console.log(
       `[chatWithAgent] Received message:`,
@@ -124,12 +126,21 @@ export class AgentService {
     // Track stored message IDs to prevent duplicates
     const storedMessageIds = new Set<string>();
 
+    let alteredMessage: CoreMessage | undefined = message;
+    if (message.role === "user" && nextSteps) {
+      alteredMessage = {
+        ...message,
+        content: message.content + "\n\n" + "Next steps: " + nextSteps,
+      };
+    }
+
     try {
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
         system: getBaseSystemPrompt(agent),
-        messages: [...existingMessages, message],
+        temperature: 0.2,
+        messages: [...existingMessages, alteredMessage],
         tools: getAgentTools(agent),
         maxSteps: 500, // Allow multiple steps for tool use
         onStepFinish: async (step: StepResult<ToolSet>) => {
@@ -199,26 +210,34 @@ export class AgentService {
   }
 
   public async handleWebhook(agentId: string, webhookJob: WebhookJob) {
-    return await this.chatWithAgent(agentId, {
-      role: "user",
-      content: `${JSON.stringify(
-        [getAsyncToolResponseFromWebhookJob(webhookJob)],
-        null,
-        2
-      )}`,
-    });
+    return await this.chatWithAgent(
+      agentId,
+      {
+        role: "user",
+        content: `${JSON.stringify(
+          [getAsyncToolResponseFromWebhookJob(webhookJob)],
+          null,
+          2
+        )}`,
+      },
+      webhookJob.body.nextSteps
+    );
   }
 
   public async handleWebhooks(agentId: string, webhookJobs: WebhookJob[]) {
-    const content: AsyncToolResponse[] = [];
+    const content = [];
     for (const job of webhookJobs) {
       content.push(getAsyncToolResponseFromWebhookJob(job));
     }
 
-    return await this.chatWithAgent(agentId, {
-      role: "user",
-      content: JSON.stringify(content, null, 2),
-    });
+    return await this.chatWithAgent(
+      agentId,
+      {
+        role: "user",
+        content: JSON.stringify(content, null, 2),
+      },
+      webhookJobs.map((job) => job.body.nextSteps).join("\n")
+    );
   }
 
   /**

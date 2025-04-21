@@ -29,18 +29,17 @@ import {
   getMessageTeamMemberTool,
   getRecruitTeamMemberTool,
 } from "../../tools/team-members";
-import { getWriteReportTool } from "../../tools/write-report";
 import { Agent, AgentWithTasks } from "../../types/database";
 
 export const getBaseSystemPrompt = (agent: AgentWithTasks) => {
   return `
-<Team Member>
+<Identity>
   <Team Member ID>${agent.id}</Team Member ID>
   <Name>${agent.title}</Name>
   <Role>${agent.agent_type}</Role>
   <Goal>${agent.goal}</Goal>
   <Background>${agent.background}</Background>
-</Team Member>
+</Identity>
 
 <Tasks>
 ${agent.tasks
@@ -78,12 +77,18 @@ ${getAgentTemplate(agent.agent_type as AgentType)}
 
 ## Context
 - Each task has a context ID. This is the ID of the context that the task is associated with. You can use the getContext tool to get the context of a task. 
-- If tasks are complex, create more tasks to break down the complexity.
 - When working on a specific task, append to the context of the task to keep track of your progress.
 
-## Communication
-- You report to the team leader. When you have completed all of your tasks, report back to them.
+# Waiting
+- Use the wait tool liberally to allow other agents to work on their tasks. It will reprompt you after the duration has passed.
+- ALWAYS use the wait tool when the user asks you to wait for a specific amount of time.
 
+
+## General Advice
+- ALWAYS break down tasks into smaller tasks.
+- ALWAYS use the tools provided to you.
+- NEVER say "I'm going to wait a bit and then continue" or anything similar—instead, ALWAYS use the wait tool.
+- Whenever a tool fails, ALWAYS call another tool to continue working on the task.
 
 </Agent Instructions>
   `;
@@ -104,8 +109,6 @@ const defaultAgentTools = (agentId: string) => ({
   messageTeamMember: getMessageTeamMemberTool(agentId),
   getContextByContextId: getContextTool,
   getContextByTaskId: getContextByTaskIdTool,
-  updateContext: updateContextTool,
-  // appendToContext: appendToContextTool,
   createTask: getCreateTaskTool(agentId),
   getTaskByTaskId: getTaskTool,
   updateTask: updateTaskTool,
@@ -115,6 +118,7 @@ const defaultAgentTools = (agentId: string) => ({
   shareTaskContextTool: getShareTaskContextTool(agentId),
   gatherFullContext: getGatherFullContextTool(agentId),
   writeToMemory: getWriteToLogsTool(agentId),
+  waitForDuration: toolRegistry.getTool("wait")!.getSynchronousTool(agentId),
 });
 
 export const getAgentTools = (agent: Agent): ToolSet => {
@@ -125,7 +129,9 @@ export const getAgentTools = (agent: Agent): ToolSet => {
         deepSearch: toolRegistry
           .getTool("deepSearch")!
           .getSynchronousTool(agent.id),
-        writeReport: getWriteReportTool(agent.id),
+        writeReport: toolRegistry
+          .getTool("writeReport")!
+          .getSynchronousTool(agent.id),
       };
     case AgentType.PROJECT_MANAGER:
       return {

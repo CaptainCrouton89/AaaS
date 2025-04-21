@@ -71,7 +71,7 @@ export const getCreateTaskTool = (agentId: string) =>
             success: true,
             data: `Task with id ${task.id} created successfully.${
               task.complexity > 5
-                ? " This task should be broken down into smaller tasks."
+                ? " This task should be broken down into smaller tasks. Immediate instructions: Break down this task into smaller tasks."
                 : ""
             }`,
             type: "markdown",

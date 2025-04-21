@@ -6,6 +6,7 @@ export interface ToolResult {
   success: boolean;
   type: "markdown" | "json";
   data?: string | object;
+  nextSteps?: string;
 }
 
 // Base tool class that all tools should extend

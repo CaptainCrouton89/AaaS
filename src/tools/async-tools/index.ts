@@ -2,6 +2,8 @@ import { toolRegistry } from "./baseTool";
 
 // Import all tools to make sure they are registered
 import "./deepSearchTool";
+import "./waitTool";
+import "./writeReportTool";
 
 // Export for external use
 export { toolRegistry };

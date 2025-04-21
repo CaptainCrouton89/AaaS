@@ -203,7 +203,9 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
       return {
         success: true,
         type: "markdown",
-        data: "Query results added to task context.",
+        data: "Query results for '" + query + "' added to task context.",
+        nextSteps:
+          "Continue researching if there's more information needed. Otherwise, continue with the next task.",
       };
     } catch (error) {
       console.error("Error in deepSearchTool:", error);
@@ -282,7 +284,10 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
           if (response.success) {
             return {
               success: true,
-              data: "Your research request has been queued and is being processed. Results will be delivered when ready.",
+              data:
+                "Your research request for '" +
+                query +
+                "' is pending. Results will be delivered when ready.",
               type: "markdown",
             };
           } else {

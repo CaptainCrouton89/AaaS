@@ -42,7 +42,7 @@ jobQueue.process(5, async (job) => {
     if (toolResult.success) {
       console.log(`Tool '${toolName}' executed successfully`);
     } else {
-      console.error(`Tool '${toolName}' execution failed:`, toolResult.error);
+      console.error(`Tool '${toolName}' execution failed:`, toolResult.data);
     }
 
     if (!agentId && !path) {
@@ -61,7 +61,6 @@ jobQueue.process(5, async (job) => {
       const response = await axios.post(webhookUrl, {
         success: toolResult.success,
         data: toolResult.data,
-        error: toolResult.error,
       });
 
       console.log(
