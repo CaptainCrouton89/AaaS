@@ -52,6 +52,26 @@ export class ContextService {
   }
 
   /**
+   * Append text to a context
+   * @param contextId The context ID
+   * @param textData The text to append
+   * @returns The updated context or null if not found
+   */
+  public async appendToContext(contextId: string, textData: string) {
+    const context = await this.getContextById(contextId);
+    if (!context) {
+      throw new Error("Context not found");
+    }
+    const newTextData = context.text_data
+      ? `${context.text_data}\n${textData}`
+      : textData;
+
+    return await contextRepository.update(contextId, {
+      text_data: newTextData,
+    });
+  }
+
+  /**
    * Delete a context
    * @param contextId The context ID
    * @returns True if successfully deleted

@@ -12,7 +12,10 @@ export interface ToolResult {
 export abstract class BaseAsyncJobTool {
   abstract readonly name: string;
   abstract readonly description: string;
-  abstract execute(args: Record<string, unknown>): Promise<ToolResult>;
+  abstract execute(
+    agentId: string,
+    args: Record<string, unknown>
+  ): Promise<ToolResult>;
   abstract getSynchronousTool(agentId: string): Tool;
 
   callAsyncTool(args: Record<string, unknown>, agentId: string) {
@@ -70,6 +73,7 @@ export const toolRegistry = ToolRegistry.getInstance();
 // Function to execute a tool by name
 export async function executeTool(
   toolName: string,
+  agentId: string,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
   const tool = toolRegistry.getTool(toolName);
@@ -83,7 +87,7 @@ export async function executeTool(
   }
 
   try {
-    return await tool.execute(args);
+    return await tool.execute(agentId, args);
   } catch (error) {
     return {
       success: false,

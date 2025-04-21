@@ -24,8 +24,9 @@ export const createJob = async (
     const job = await jobQueue.add({
       toolName,
       args: args || {},
-      agentId: agentId || "",
-      path: path || "",
+      agentId,
+      path,
+      timestamp: new Date().toISOString(),
     } as JobData);
 
     res.status(201).json({

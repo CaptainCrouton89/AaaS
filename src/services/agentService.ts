@@ -1,23 +1,16 @@
 import { openai } from "@ai-sdk/openai";
 import { CoreMessage, generateText } from "ai";
 import { AgentType } from "../constants/agents";
-import { getSystemPrompt } from "../lib/prompts/agent.prompt";
-import { agentRepository } from "../repositories";
-import { toolRegistry, ToolResult } from "../tools/async-tools/baseTool";
 import {
-  delegateTaskTool,
-  deleteTaskTool,
-  getCreateTaskTool,
-  getMessageTeamMemberTool,
-  getRecruitTeamMemberTool,
-  getSubtasksTool,
-  getTasksByTeamMemberTool,
-  getTaskTool,
-  updateTaskTool,
-} from "../tools/delegation";
-import { Agent, Task } from "../types/database";
+  getAgentTools,
+  getBaseSystemPrompt,
+} from "../lib/prompts/agent.prompt";
+import { agentRepository } from "../repositories";
+import { ToolResult } from "../tools/async-tools/baseTool";
+import { Agent, AgentWithTasksAndContext, Task } from "../types/database";
 import { AsyncToolResponse } from "../types/dto";
 import agentMessageHistoryService from "./agentMessageHistoryService";
+import { contextService } from "./index";
 import taskService from "./taskService";
 
 interface WebhookJob {
@@ -52,18 +45,25 @@ export class AgentService {
    * @returns The created agent
    */
   public async createAgent(
+    ownerId: string = "system",
     name: string,
     goal: string,
     agentType: AgentType,
     background: string,
-    ownerId: string = "system"
+    contextId: string | undefined = undefined
   ) {
+    if (!contextId) {
+      const newContext = await contextService.createContext({}, ownerId);
+      contextId = newContext.id;
+    }
+
     return await agentRepository.create({
       title: name,
       goal: goal,
       agent_type: agentType,
       background: background,
       owner: ownerId,
+      context_id: contextId,
     });
   }
 
@@ -90,30 +90,16 @@ export class AgentService {
     let existingMessages =
       await agentMessageHistoryService.getMessagesByAgentId(agentId);
 
+    console.log("agent owner", agent.owner);
+
     try {
       // Generate a complete text response using OpenAI
       const result = await generateText({
         model: openai("gpt-4.1-nano"),
-        system: getSystemPrompt(agent),
+        system: getBaseSystemPrompt(agent),
         messages: [...existingMessages, message],
-        tools: {
-          helloWorld: toolRegistry
-            .getTool("helloWorld")!
-            .getSynchronousTool(agentId),
-          deepSearch: toolRegistry
-            .getTool("deepSearch")!
-            .getSynchronousTool(agentId),
-          recruitTeamMember: getRecruitTeamMemberTool(agentId),
-          createTask: getCreateTaskTool(agentId),
-          getTask: getTaskTool,
-          updateTask: updateTaskTool,
-          deleteTask: deleteTaskTool,
-          getTasksByTeamMemberTool,
-          getSubtasks: getSubtasksTool,
-          delegateTask: delegateTaskTool,
-          messageTeamMember: getMessageTeamMemberTool(agentId),
-        },
-        maxSteps: 30, // Allow multiple steps for tool use
+        tools: getAgentTools(agent),
+        maxSteps: 100, // Allow multiple steps for tool use
       });
 
       const { text, usage, response } = result;
@@ -143,8 +129,25 @@ export class AgentService {
    * @param agentId The agent ID
    * @returns The agent or null if not found
    */
-  public async getAgentById(agentId: string): Promise<Agent | null> {
-    return await agentRepository.findById(agentId);
+  public async getAgentById(
+    agentId: string
+  ): Promise<AgentWithTasksAndContext | null> {
+    const agent = await agentRepository.findById(agentId);
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+    if (!agent.context_id) {
+      throw new Error("Agent has no context");
+    }
+    const context = await contextService.getContextById(agent.context_id);
+
+    if (!context) {
+      throw new Error("Agent has no context");
+    }
+
+    const tasks = await taskService.getTasksByOwnerId(agentId);
+
+    return { ...agent, context, tasks };
   }
 
   /**
@@ -224,6 +227,37 @@ export class AgentService {
   }
 
   /**
+   * Delete an agent and its message history
+   * @param agentId The agent ID
+   * @returns True if successfully deleted
+   */
+  public async deleteAgent(agentId: string): Promise<boolean> {
+    try {
+      // Find the agent first to make sure it exists
+      const agent = await agentRepository.findById(agentId);
+
+      if (!agent) {
+        throw new Error("Agent not found");
+      }
+
+      // Clear message history first
+      await agentMessageHistoryService.clearMessages(agentId);
+
+      // Delete the agent
+      const result = await agentRepository.delete(agentId);
+
+      return result;
+    } catch (error) {
+      console.error(`Error deleting agent ${agentId}:`, error);
+      throw new Error(
+        `Failed to delete agent: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  /**
    * Get all agents
    * @returns Array of all agents
    */
@@ -254,6 +288,26 @@ export class AgentService {
     const tasks = await taskService.getTasksByOwnerId(agentId);
 
     return { agent, tasks };
+  }
+
+  /**
+   * Update an existing agent
+   * @param agentId The agent ID
+   * @param agentData The updated agent data
+   * @returns The updated agent or null if not found
+   */
+  public async updateAgent(
+    agentId: string,
+    agentData: Partial<Agent>
+  ): Promise<Agent | null> {
+    try {
+      console.log(`[updateAgent] Updating agent: ${agentId}`);
+      const result = await agentRepository.update(agentId, agentData);
+      return result;
+    } catch (error) {
+      console.error("Error in updateAgent:", error);
+      throw error;
+    }
   }
 }
 

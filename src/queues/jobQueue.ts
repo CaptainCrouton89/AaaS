@@ -6,9 +6,9 @@ import { executeTool } from "../tools/async-tools/baseTool";
 export interface JobData {
   toolName: string;
   args: Record<string, unknown>;
-  agentId?: string;
-  path?: string;
-  timestamp?: string;
+  agentId: string;
+  path: string;
+  timestamp: string;
 }
 
 // Interface for job result
@@ -36,7 +36,7 @@ jobQueue.process(5, async (job) => {
     console.log(`Tool arguments:`, args);
 
     // Execute the tool
-    const toolResult = await executeTool(toolName, args);
+    const toolResult = await executeTool(toolName, agentId, args);
     job.progress(100);
 
     if (toolResult.success) {

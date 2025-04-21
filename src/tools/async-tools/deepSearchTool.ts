@@ -1,9 +1,9 @@
 import { tool } from "ai";
 import axios from "axios";
 import { z } from "zod";
+import { agentService, contextService } from "../../services";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
-
 // Interface for Perplexity API Response
 interface PerplexityResponse {
   id: string;
@@ -88,15 +88,18 @@ export class DeepSearchTool extends BaseAsyncJobTool {
     }
   }
 
-  async execute({
-    query,
-    model = "sonar",
-    contextSize = "high",
-  }: {
-    query: string;
-    model?: string;
-    contextSize?: string;
-  }): Promise<ToolResult> {
+  async execute(
+    agentId: string,
+    {
+      query,
+      model = "sonar",
+      contextSize = "medium",
+    }: {
+      query: string;
+      model?: string;
+      contextSize?: string;
+    }
+  ): Promise<ToolResult> {
     try {
       console.log(`deepSearchTool executing with query: ${query}`);
 
@@ -108,12 +111,17 @@ export class DeepSearchTool extends BaseAsyncJobTool {
       );
 
       console.log("deepSearchTool executed successfully");
+      const agent = await agentService.getAgentById(agentId);
+      if (!agent || !agent.context_id) {
+        throw new Error("Agent not found or context_id is null");
+      }
+      await contextService.appendToContext(agent.context_id, researchResults);
 
       return {
         success: true,
         data: {
           type: "text",
-          text: researchResults,
+          text: "Query results added to system context.",
           timestamp: new Date().toISOString(),
         },
       };
@@ -135,26 +143,30 @@ export class DeepSearchTool extends BaseAsyncJobTool {
         query: z
           .string()
           .describe("The search query or research question to investigate"),
+        taskId: z.string().describe("The task ID associated with the research"),
         model: z
           .enum([
             "sonar",
             "pplx-7b-online",
             "pplx-70b-online",
-            "mixtral-8x7b-instruct",
-            "llama-3-70b-instruct",
+            "sonar-deep-research",
           ])
           .optional()
-          .describe("The Perplexity model to use (default: sonar)"),
+          .default("sonar")
+          .describe(
+            "The Perplexity model to use, in order of depth of research (default: sonar)"
+          ),
         contextSize: z
           .enum(["low", "medium", "high"])
           .optional()
-          .describe("How much search context to retrieve (default: high)"),
+          .default("medium")
+          .describe("How much search context to retrieve (default: medium)"),
       }),
-      execute: async ({ query, model, contextSize }) => {
+      execute: async ({ query, model, contextSize, taskId }) => {
         try {
           // Post the job to the job queue
           const response: JobResponse = await this.callAsyncTool(
-            { query, model, contextSize },
+            { query, model, contextSize, taskId },
             agentId
           );
 

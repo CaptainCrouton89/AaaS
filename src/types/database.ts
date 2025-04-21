@@ -15,9 +15,6 @@ export type Context = Database["public"]["Tables"]["contexts"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type ProgrammingTask =
   Database["public"]["Tables"]["programming_tasks"]["Row"];
-export type Contact = Database["public"]["Tables"]["contacts"]["Row"];
-export type ShortTermMemory =
-  Database["public"]["Tables"]["short_term_memory"]["Row"];
 export type AgentMessageHistory =
   Database["public"]["Tables"]["agent_message_history"]["Row"];
 
@@ -35,10 +32,19 @@ export type ProgrammingTaskInsert =
 export type ProgrammingTaskUpdate =
   Database["public"]["Tables"]["programming_tasks"]["Update"];
 
-export type ContactInsert = Database["public"]["Tables"]["contacts"]["Insert"];
-export type ContactUpdate = Database["public"]["Tables"]["contacts"]["Update"];
+export type AgentWithContext = Agent & {
+  context: Context;
+};
 
-export type ShortTermMemoryInsert =
-  Database["public"]["Tables"]["short_term_memory"]["Insert"];
-export type ShortTermMemoryUpdate =
-  Database["public"]["Tables"]["short_term_memory"]["Update"];
+export type AgentWithTasks = Agent & {
+  tasks: Task[];
+};
+
+export type AgentWithTasksAndContext = Agent & {
+  tasks: TaskWithSubTasks[];
+  context: Context;
+};
+
+export type TaskWithSubTasks = Task & {
+  sub_tasks: TaskWithSubTasks[];
+};

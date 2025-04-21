@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { Task } from "../types/database";
+import { Task, TaskInsert, TaskWithSubTasks } from "../types/database";
 import { BaseRepository } from "./BaseRepository";
 
 /**
@@ -46,7 +46,7 @@ export class TaskRepository implements BaseRepository<Task> {
    * @param data The task data
    * @returns The created task
    */
-  async create(data: Partial<Task>): Promise<Task> {
+  async create(data: TaskInsert): Promise<Task> {
     const { data: newTask, error } = await supabase
       .from("tasks")
       .insert(data)
@@ -104,18 +104,44 @@ export class TaskRepository implements BaseRepository<Task> {
    * @param ownerId The owner (agent) ID
    * @returns Array of tasks owned by the specified agent
    */
-  async findByOwnerId(ownerId: string): Promise<Task[]> {
+  async findByOwnerId(ownerId: string): Promise<TaskWithSubTasks[]> {
     const { data, error } = await supabase
       .from("tasks")
       .select("*")
-      .eq("owner_id", ownerId);
+      .eq("owner_id", ownerId)
+      .is("parent_id", null); // Only fetch top-level tasks
 
     if (error) {
-      console.error("Error fetching tasks by owner:", error);
+      console.error("Error fetching tasks:", error);
       return [];
     }
 
-    return data || [];
+    // Convert tasks to TaskWithSubTasks and fetch subtasks recursively
+    const tasksWithSubtasks = await Promise.all(
+      (data || []).map(async (task) => this.buildTaskWithSubtasks(task))
+    );
+
+    return tasksWithSubtasks;
+  }
+
+  /**
+   * Recursively build a task with its subtasks
+   * @param task The parent task
+   * @returns The task with populated subtasks
+   */
+  private async buildTaskWithSubtasks(task: Task): Promise<TaskWithSubTasks> {
+    const subtasks = await this.findSubtasks(task.id);
+
+    // Recursively fetch subtasks for each subtask
+    const subTasksWithChildren = await Promise.all(
+      subtasks.map(async (subtask) => this.buildTaskWithSubtasks(subtask))
+    );
+
+    // Return the task with its subtasks
+    return {
+      ...task,
+      sub_tasks: subTasksWithChildren,
+    };
   }
 
   /**

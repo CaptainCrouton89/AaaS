@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { Database } from "../types/database.types";
 
 dotenv.config();
 
@@ -11,4 +12,4 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Supabase credentials are not set in environment variables");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey);

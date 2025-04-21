@@ -1,5 +1,4 @@
 export { agentMessageHistoryRedisRepository } from "./AgentMessageHistoryRedisRepository";
-export { agentMessageHistoryRepository } from "./AgentMessageHistoryRepository";
 
 export { agentRepository } from "./AgentRepository";
 export { contextRepository } from "./ContextRepository";

@@ -54,39 +54,39 @@ export type Database = {
         Row: {
           agent_type: string
           background: string | null
-          context_id: string | null
+          context_id: string
           created_at: string | null
           goal: string
           id: string
           is_active: boolean | null
           logs: string | null
-          owner: string | null
+          owner: string
           title: string
           updated_at: string | null
         }
         Insert: {
           agent_type: string
           background?: string | null
-          context_id?: string | null
+          context_id: string
           created_at?: string | null
           goal: string
           id?: string
           is_active?: boolean | null
           logs?: string | null
-          owner?: string | null
+          owner: string
           title: string
           updated_at?: string | null
         }
         Update: {
           agent_type?: string
           background?: string | null
-          context_id?: string | null
+          context_id?: string
           created_at?: string | null
           goal?: string
           id?: string
           is_active?: boolean | null
           logs?: string | null
-          owner?: string | null
+          owner?: string
           title?: string
           updated_at?: string | null
         }
@@ -104,21 +104,21 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
-          owner: string | null
+          owner: string
           text_data: string
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           id?: string
-          owner?: string | null
-          text_data: string
+          owner: string
+          text_data?: string
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           id?: string
-          owner?: string | null
+          owner?: string
           text_data?: string
           updated_at?: string | null
         }
@@ -171,7 +171,8 @@ export type Database = {
       }
       tasks: {
         Row: {
-          context_id: string | null
+          complexity: number
+          context_id: string
           created_at: string | null
           description: string
           id: string
@@ -185,7 +186,8 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          context_id?: string | null
+          complexity?: number
+          context_id: string
           created_at?: string | null
           description: string
           id?: string
@@ -199,7 +201,8 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          context_id?: string | null
+          complexity?: number
+          context_id?: string
           created_at?: string | null
           description?: string
           id?: string

@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { taskRepository } from "../repositories";
-import { Task } from "../types/database";
+import { Task, TaskInsert } from "../types/database";
 
 dotenv.config();
 
@@ -30,7 +30,8 @@ export class TaskService {
    * @param task The task data
    * @returns The created task
    */
-  public async createTask(task: Partial<Task>) {
+  public async createTask(task: TaskInsert) {
+    console.log("Creating task:", task);
     return await taskRepository.create(task);
   }
 
