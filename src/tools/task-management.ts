@@ -133,7 +133,7 @@ export const updateTaskTool = tool({
     title: z.string().optional().describe("New title for the task"),
     description: z.string().optional().describe("New description for the task"),
     status: z.string().optional().describe("New status for the task"),
-    ownerId: z.string().optional().describe("ID of the new owner team member"),
+    ownerId: z.string().optional().describe("ID of the new agent owner"),
     contextId: z
       .string()
       .optional()

@@ -300,30 +300,30 @@ export const updateAgentContextTool = tool({
 //   },
 // });
 
-export const getShareTaskContextTool = (agentId: string) =>
+export const getShareTaskContextTool = (fromAgentId: string) =>
   tool({
-    description: "Share a task context with a team member",
+    description: "Share a task context with an agent",
     parameters: z.object({
       taskId: z.string().describe("ID of the task to share"),
-      teamMemberId: z
+      agentId: z
         .string()
-        .describe("ID of the team member to share the task context with"),
+        .describe("ID of the agent to share the task context with"),
     }),
-    execute: async ({ taskId, teamMemberId }): Promise<ToolResult> => {
+    execute: async ({ taskId, agentId }): Promise<ToolResult> => {
       const task = await taskService.getTaskById(taskId);
-      const teamMember = await agentService.getAgentById(teamMemberId);
+      const agent = await agentService.getAgentById(agentId);
 
       if (!task) {
         throw new Error(`Task not found: ${taskId}`);
       }
 
-      if (!teamMember) {
-        throw new Error(`Team member not found: ${teamMemberId}`);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
       }
 
       const result = await agentService.sendMessageFromAgentToAgent(
+        fromAgentId,
         agentId,
-        teamMemberId,
         `Here's some context for the task: ${task.title} Id: ${task.context.text_data}
         
         Context: ${task.context.text_data}`

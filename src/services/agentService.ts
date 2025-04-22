@@ -2,9 +2,9 @@ import { openai } from "@ai-sdk/openai";
 import { CoreMessage, generateText, StepResult, ToolSet } from "ai";
 import {
   getAgentTools,
-  getBaseSystemPrompt,
   getInitializationPrompt,
 } from "../lib/prompts/agent.prompt";
+import { getBaseSystemPrompt } from "../lib/prompts/baseAgent.system.prompt";
 import { agentRepository } from "../repositories";
 import { ToolResult } from "../tools/async-tools/baseTool";
 import { Agent, AgentInsert, AgentWithTasks, Task } from "../types/database";

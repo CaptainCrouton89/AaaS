@@ -5,26 +5,26 @@ import { AgentService } from "../services/agentService";
 import { ToolResult } from "./async-tools/baseTool";
 
 /**
- * Tool to recruit a new team member
+ * Tool to spawn a new agent
  *
  * @param userId User ID for ownership tracking
- * @returns Tool instance for recruiting team members
+ * @returns Tool instance for recruiting agent team members
  */
-export const getRecruitTeamMemberTool = (userId: string, agentId: string) =>
+export const getSpawnAgentTool = (userId: string, agentId: string) =>
   tool({
-    description: "Recruits a new team member and puts them to work",
+    description: "Spawns a new agent",
     parameters: z.object({
-      name: z.string().describe("The name of the person to recruit"),
+      name: z.string().describe("The name of the agent to spawn"),
       jobTitle: z
         .enum(Object.values(AgentType) as [string, ...string[]])
-        .describe("The job title of the person to recruit"),
+        .describe("The job title of the agent to spawn"),
       goal: z
         .string()
         .describe("A detailed objective for the person, in bullet points"),
       background: z
         .string()
         .describe(
-          "Additional background information for the person to recruit (relevant to the job title)"
+          "Additional background information for the agent to spawn (relevant to the job title)"
         ),
     }),
     execute: async ({
@@ -35,7 +35,7 @@ export const getRecruitTeamMemberTool = (userId: string, agentId: string) =>
     }): Promise<ToolResult> => {
       try {
         console.log(
-          `[RecruitTeamMemberTool] Recruiting team member: ${name} with goal: ${goal} and jobTitle: ${jobTitle} and background: ${background} for ownerId: ${userId}`
+          `[SpawnAgentTool] Spawning agent: ${name} with goal: ${goal} and jobTitle: ${jobTitle} and background: ${background} for ownerId: ${userId}`
         );
         const agentService = new AgentService();
         const agent = await agentService.createAgent({
@@ -52,16 +52,16 @@ export const getRecruitTeamMemberTool = (userId: string, agentId: string) =>
         if (agent) {
           return {
             success: true,
-            data: `Team member with id ${agent.id} recruited and has been put to work`,
+            data: `Agent with id ${agent.id} spawned and has been put to work`,
             type: "markdown",
           };
         } else {
-          throw new Error(`Failed to queue team member recruitment: ${name}`);
+          throw new Error(`Failed to queue agent spawning: ${name}`);
         }
       } catch (error) {
-        console.error("[RecruitTeamMemberTool] Error submitting job:", error);
+        console.error("[SpawnAgentTool] Error submitting job:", error);
         throw new Error(
-          `Failed to recruit team member: ${
+          `Failed to spawn agent: ${
             error instanceof Error ? error.message : String(error)
           }`
         );
@@ -70,26 +70,24 @@ export const getRecruitTeamMemberTool = (userId: string, agentId: string) =>
   });
 
 /**
- * Tool for sending messages between team members
+ * Tool for sending messages between agents
  *
- * @param fromTeamMemberId ID of the team member sending the message
- * @returns Tool instance for messaging team members
+ * @param fromAgentId ID of the agent sending the message
+ * @returns Tool instance for messaging agents
  */
-export const getMessageTeamMemberTool = (fromTeamMemberId: string) =>
+export const getMessageAgentTool = (fromAgentId: string) =>
   tool({
-    description: "Send a message to a team member",
+    description: "Send a message to an agent",
     parameters: z.object({
-      teamMemberId: z
-        .string()
-        .describe("ID of the team member to send the message to"),
-      message: z.string().describe("The message to send to the team member"),
+      agentId: z.string().describe("ID of the agent to send the message to"),
+      message: z.string().describe("The message to send to the agent"),
     }),
-    execute: async ({ teamMemberId, message }): Promise<ToolResult> => {
+    execute: async ({ agentId, message }): Promise<ToolResult> => {
       try {
         const agentService = new AgentService();
         const result = await agentService.sendMessageFromAgentToAgent(
-          fromTeamMemberId,
-          teamMemberId,
+          fromAgentId,
+          agentId,
           message
         );
 
@@ -107,27 +105,24 @@ export const getMessageTeamMemberTool = (fromTeamMemberId: string) =>
     },
   });
 
-export const removeTeamMemberTool = tool({
-  description: "Remove a team member from the team",
+export const removeAgentTool = tool({
+  description: "Remove an agent from the team",
   parameters: z.object({
-    teamMemberId: z.string().describe("ID of the team member to remove"),
+    agentId: z.string().describe("ID of the agent to remove"),
   }),
-  execute: async ({ teamMemberId }): Promise<ToolResult> => {
+  execute: async ({ agentId }): Promise<ToolResult> => {
     try {
       const agentService = new AgentService();
-      await agentService.deleteAgent(teamMemberId);
+      await agentService.deleteAgent(agentId);
       return {
         success: true,
-        data: `Team member with id ${teamMemberId} removed successfully`,
+        data: `Agent with id ${agentId} removed successfully`,
         type: "markdown",
       };
     } catch (error) {
-      console.error(
-        "[RemoveTeamMemberTool] Error removing team member:",
-        error
-      );
+      console.error("[RemoveAgentTool] Error removing agent:", error);
       throw new Error(
-        `Failed to remove team member: ${
+        `Failed to remove agent: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

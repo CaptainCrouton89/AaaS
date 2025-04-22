@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { ProgrammingTask } from "../types/database";
+import { InsertProgrammingTask, ProgrammingTask } from "../types/database";
 import { BaseRepository } from "./BaseRepository";
 
 /**
@@ -50,7 +50,7 @@ export class ProgrammingTaskRepository
    * @param data The programming task data
    * @returns The created programming task
    */
-  async create(data: Partial<ProgrammingTask>): Promise<ProgrammingTask> {
+  async create(data: InsertProgrammingTask): Promise<ProgrammingTask> {
     const { data: newTask, error } = await supabase
       .from("programming_tasks")
       .insert(data)

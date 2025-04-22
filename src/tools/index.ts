@@ -1,9 +1,9 @@
 // Team member management tools
 export {
-  getMessageTeamMemberTool,
-  getRecruitTeamMemberTool,
-  removeTeamMemberTool,
-} from "./team-members";
+  getMessageAgentTool,
+  getSpawnAgentTool,
+  removeAgentTool,
+} from "./agent-management";
 
 // Task management tools
 export {
@@ -17,7 +17,7 @@ export {
 export {
   delegateTaskTool,
   getSubtasksTool,
-  getTasksByTeamMemberTool,
+  getTasksByAgentTool as getTasksByTeamMemberTool,
 } from "./task-queries";
 
 // Context tools

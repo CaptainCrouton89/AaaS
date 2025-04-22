@@ -41,3 +41,10 @@ export type TaskWithSubTasks = Task & {
 export type TaskWithContext = Task & {
   context: Context;
 };
+
+export type InsertProgrammingTask =
+  Database["public"]["Tables"]["programming_tasks"]["Insert"];
+export type UpdateProgrammingTask =
+  Database["public"]["Tables"]["programming_tasks"]["Update"];
+
+export type InsertTask = Database["public"]["Tables"]["tasks"]["Insert"];

@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
 import { programmingTaskRepository } from "../repositories";
-import { ProgrammingTask } from "../types/database";
+import {
+  InsertProgrammingTask,
+  UpdateProgrammingTask,
+} from "../types/database";
 
 dotenv.config();
 
@@ -32,7 +35,7 @@ export class ProgrammingTaskService {
    * @returns The created programming task
    */
   public async createProgrammingTask(
-    task: Partial<ProgrammingTask>,
+    task: InsertProgrammingTask,
     ownerId: string = "system"
   ) {
     return await programmingTaskRepository.create({
@@ -49,7 +52,7 @@ export class ProgrammingTaskService {
    */
   public async updateProgrammingTask(
     taskId: string,
-    task: Partial<ProgrammingTask>
+    task: UpdateProgrammingTask
   ) {
     return await programmingTaskRepository.update(taskId, task);
   }

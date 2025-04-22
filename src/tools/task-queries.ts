@@ -4,15 +4,12 @@ import { TaskService } from "../services/taskService";
 import { ToolResult } from "./async-tools/baseTool";
 
 /**
- * Tool to get tasks assigned to a team member
+ * Tool to get tasks assigned to another agent
  */
-export const getTasksByTeamMemberTool = tool({
-  description:
-    "Get all tasks assigned to a specific team member (such as yourself)",
+export const getTasksByAgentTool = tool({
+  description: "Get all tasks assigned to a specific agent (such as yourself)",
   parameters: z.object({
-    ownerId: z
-      .string()
-      .describe("ID of the team member whose tasks to retrieve"),
+    ownerId: z.string().describe("ID of the agent whose tasks to retrieve"),
   }),
   execute: async ({ ownerId }): Promise<ToolResult> => {
     try {
@@ -75,21 +72,19 @@ export const getSubtasksTool = tool({
 });
 
 /**
- * Tool to delegate a task to another team member
+ * Tool to delegate a task to another agent
  */
 export const delegateTaskTool = tool({
-  description: "Delegate a task to a team member",
+  description: "Delegate a task to an agent",
   parameters: z.object({
     taskId: z.string().describe("ID of the task to delegate"),
-    teamMemberId: z
-      .string()
-      .describe("ID of the team member to delegate the task to"),
+    agentId: z.string().describe("ID of the agent to delegate the task to"),
   }),
-  execute: async ({ taskId, teamMemberId }): Promise<ToolResult> => {
+  execute: async ({ taskId, agentId }): Promise<ToolResult> => {
     try {
       const taskService = new TaskService();
       const task = await taskService.updateTask(taskId, {
-        owner_id: teamMemberId,
+        owner_id: agentId,
       });
 
       if (task) {
