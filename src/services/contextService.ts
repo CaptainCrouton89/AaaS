@@ -1,6 +1,10 @@
+import { openai } from "@ai-sdk/openai";
+import { generateText } from "ai";
 import dotenv from "dotenv";
 import { contextRepository } from "../repositories";
 import { Context, ContextInsert } from "../types/database";
+import agentMessageHistoryService from "./agentMessageHistoryService";
+import agentService from "./agentService";
 import taskService from "./taskService";
 
 dotenv.config();
@@ -83,6 +87,34 @@ export class ContextService {
    */
   public async deleteContext(contextId: string) {
     return await contextRepository.delete(contextId);
+  }
+
+  public async condenseMemory(agentId: string) {
+    const agent = await agentService.getAgentById(agentId);
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    const messageHistory =
+      await agentMessageHistoryService.getMessagesByAgentId(agentId);
+
+    const systemPrompt = `
+You specialize in condensing memories into simplified forms.
+
+    You will be given a message history. Summarize it in detail. Be sure to include any IDs and other specific details.
+    `;
+
+    const prompt = `
+    Summarize this message history in detail. Include any IDs and other specific details.
+    ${messageHistory.map((message) => message.content).join("\n")}
+    `;
+
+    const codensedMemory = await generateText({
+      model: openai("gpt-4.1-nano"),
+      system: systemPrompt,
+      temperature: 0.2,
+      prompt: prompt,
+    });
   }
 }
 
