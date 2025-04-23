@@ -12,6 +12,7 @@ import { toolRegistry } from "../../tools/async-tools";
 import {
   // appendToContextTool,
   deleteContextTool,
+  getCondenseMemoryTool,
   getContextByTaskIdTool,
   getContextTool,
   getCreateContextTool,
@@ -29,6 +30,7 @@ import {
 import { getTasksByAgentTool } from "../../tools/task-queries";
 import { Agent } from "../../types/database";
 import { alariaWikiEditorSystemPrompt } from "./alariaWikiEditor.system.prompt";
+import { programmingSystemTemplate } from "./programmer.system.prompt";
 import { projectManagerTemplate } from "./projectManager.system.prompt";
 import { researchAssistantTemplate } from "./researcher.system.prompt";
 export const getAgentTemplate = (agentType: AgentType) => {
@@ -39,6 +41,8 @@ export const getAgentTemplate = (agentType: AgentType) => {
       return projectManagerTemplate;
     case AgentType.ALARIA_WIKI_EDITOR:
       return alariaWikiEditorSystemPrompt;
+    case AgentType.PROGRAMMER:
+      return programmingSystemTemplate;
     default:
       return projectManagerTemplate;
   }
@@ -58,10 +62,25 @@ const defaultAgentTools = (agentId: string) => ({
   gatherFullContext: getGatherFullContextTool(agentId),
   writeToMemory: getWriteToLogsTool(agentId),
   waitForDuration: toolRegistry.getTool("wait")!.getSynchronousTool(agentId),
+  condenseMemory: getCondenseMemoryTool(agentId),
 });
 
 export const getAgentTools = (agent: Agent): ToolSet => {
   switch (agent.agent_type) {
+    case AgentType.PROGRAMMER:
+      return {
+        ...defaultAgentTools(agent.id),
+        writeCode: toolRegistry // !not done yet
+          .getTool("writeCode")!
+          .getSynchronousTool(agent.id),
+      };
+    // case AgentType.ARCHITECT:
+    //   return {
+    //     ...defaultAgentTools(agent.id),
+    //     designArchitecture: toolRegistry // !not done yet
+    //       .getTool("designArchitecture")!
+    //       .getSynchronousTool(agent.id),
+    //   };
     case AgentType.RESEARCH_ASSISTANT:
       return {
         ...defaultAgentTools(agent.id),

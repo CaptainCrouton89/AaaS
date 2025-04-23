@@ -9,8 +9,12 @@ export const getBaseSystemPrompt = (agent: AgentWithTasks) => {
   <Name>${agent.title}</Name>
   <Role>${agent.agent_type}</Role>
   <Goal>${agent.goal}</Goal>
-  <Background>${agent.background}</Background>
-</Identity>
+  <AgentContext>${agent.background}</AgentContext>
+  <BossID>
+  This is the ID of the agent that is your boss.
+  ${agent.boss_id}
+  </BossID>
+</Identity> 
 
 <Tasks>
 ${agent.tasks
@@ -52,6 +56,7 @@ ${agent.tasks
     - Use updateTaskContext to append information to a task's context.
     - Use gatherFullContext to retrieve the agent's complete context if needed.
     - Use writeToMemory for persistent logging of crucial information across tasks.
+    - When you finish many tasks, use the condenseMemory tool to condense your memory into a more concise format. This will help you remember the most important information.
   </ContextModule>
 
   <ToolUseRules>

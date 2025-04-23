@@ -34,16 +34,35 @@ async function sendMessage(agentId: string, message: string) {
 // Function for interactive chat
 async function startInteractiveChat(agentId: string) {
   const rl = readline.createInterface({ input, output });
+  const apiBaseUrl = process.env.API_BASE_URL || "http://localhost:3800"; // Define here for reuse
   console.log(
-    `Starting interactive chat with agent ${agentId}. Type 'exit' to quit.`
+    `Starting interactive chat with agent ${agentId}. Type 'exit' to quit or '/clear' to clear history.`
   );
 
   while (true) {
     const userInput = await rl.question("> ");
-    if (userInput.toLowerCase() === "exit") {
+    const command = userInput.toLowerCase();
+
+    if (command === "exit") {
       break;
     }
 
+    if (command === "/clear") {
+      try {
+        console.log("Clearing chat history...");
+        await axios.delete(`${apiBaseUrl}/api/agents/${agentId}/messages`);
+        console.log("Chat history cleared successfully.");
+      } catch (error: any) {
+        console.error("\nError clearing chat history:", error.message);
+        if (error.response) {
+          console.error("Response data:", error.response.data);
+          console.error("Response status:", error.response.status);
+        }
+      }
+      continue; // Prompt for next input
+    }
+
+    // Send message if it wasn't a command
     const responseData = await sendMessage(agentId, userInput);
     if (responseData) {
       // Assuming the agent's response is directly in responseData or a specific field like 'reply'

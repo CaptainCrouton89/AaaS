@@ -1,0 +1,100 @@
+{
+  "name": "root",
+  "files": [
+    {
+      "name": "README.md",
+      "description": "Project overview and setup instructions for the Next.js notes app.",
+      "dependencies": [],
+      "functionsWithin": []
+    },
+    {
+      "name": "pages/index.tsx",
+      "description": "Main page component displaying the list of notes, add note form, and delete functionality.",
+      "dependencies": [
+        "react",
+        "next",
+        "react-hook-form",
+        "zod",
+        "lucide icons",
+        "react-hot-toast"
+      ],
+      "functionsWithin": [
+        {
+          "functionName": "Home",
+          "functionDescription": "Main React component for the home page that displays notes, allows adding new notes, and deleting existing ones.",
+          "functionParams": {},
+          "functionReturnType": "JSX.Element"
+        }
+      ]
+    },
+    {
+      "name": "styles/globals.css",
+      "description": "Global CSS file for minimal styling using Tailwind CSS.",
+      "dependencies": ["tailwindcss"],
+      "functionsWithin": []
+    }
+  ],
+  "subDirectories": [
+    {
+      "name": "components",
+      "files": [
+        {
+          "name": "NoteList.tsx",
+          "description": "Component to render the list of notes with delete buttons.",
+          "dependencies": ["react", "lucide icons"],
+          "functionsWithin": [
+            {
+              "functionName": "NoteList",
+              "functionDescription": "Renders a list of notes with delete buttons for each note.",
+              "functionParams": {
+                "notes": "Array<{ id: string; text: string }>",
+                "onDelete": "(id: string) => void"
+              },
+              "functionReturnType": "JSX.Element"
+            }
+          ]
+        },
+        {
+          "name": "AddNoteForm.tsx",
+          "description": "Form component to add a new note using react-hook-form and zod for validation.",
+          "dependencies": ["react", "react-hook-form", "zod"],
+          "functionsWithin": [
+            {
+              "functionName": "AddNoteForm",
+              "functionDescription": "Form component that handles adding a new note with validation using react-hook-form and zod.",
+              "functionParams": { "onAddNote": "(text: string) => void" },
+              "functionReturnType": "JSX.Element"
+            }
+          ]
+        }
+      ],
+      "subDirectories": []
+    },
+    {
+      "name": "lib",
+      "files": [
+        {
+          "name": "localStorage.ts",
+          "description": "Utility functions to get and set notes in local storage for persistence.",
+          "dependencies": [],
+          "functionsWithin": [
+            {
+              "functionName": "getNotesFromLocalStorage",
+              "functionDescription": "Retrieves the list of notes from local storage. Returns an empty array if no notes are found.",
+              "functionParams": {},
+              "functionReturnType": "Array<{ id: string; text: string }>"
+            },
+            {
+              "functionName": "saveNotesToLocalStorage",
+              "functionDescription": "Saves the list of notes to local storage.",
+              "functionParams": {
+                "notes": "Array<{ id: string; text: string }>"
+              },
+              "functionReturnType": "void"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

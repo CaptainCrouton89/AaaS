@@ -336,3 +336,14 @@ export const getShareTaskContextTool = (fromAgentId: string) =>
       };
     },
   });
+
+export const getCondenseMemoryTool = (agentId: string) =>
+  tool({
+    description: "Condense memory",
+    parameters: z.object({}),
+    execute: async (): Promise<ToolResult> => {
+      await contextService.condenseMemory(agentId);
+
+      return { success: true, data: "Memory condensed", type: "markdown" };
+    },
+  });

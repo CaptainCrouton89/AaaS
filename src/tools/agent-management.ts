@@ -24,7 +24,12 @@ export const getSpawnAgentTool = (userId: string, agentId: string) =>
       background: z
         .string()
         .describe(
-          "Additional background information for the agent to spawn (relevant to the job title)"
+          "Additional useful context for the agent to spawn (relevant to the job title)"
+        ),
+      startWorkImmediately: z
+        .boolean()
+        .describe(
+          "Whether to start the agent to work immediately after spawning"
         ),
     }),
     execute: async ({
@@ -32,6 +37,7 @@ export const getSpawnAgentTool = (userId: string, agentId: string) =>
       goal,
       jobTitle,
       background,
+      startWorkImmediately,
     }): Promise<ToolResult> => {
       try {
         console.log(
@@ -47,12 +53,16 @@ export const getSpawnAgentTool = (userId: string, agentId: string) =>
           boss_id: agentId,
         });
 
-        agentService.initializeAgent(agent.id);
+        agentService.initializeAgent(agent.id, startWorkImmediately);
 
         if (agent) {
           return {
             success: true,
-            data: `Agent with id ${agent.id} spawned and has been put to work`,
+            data: `Agent with id ${agent.id} spawned. ${
+              startWorkImmediately
+                ? "Agent has been put to work."
+                : "Agent has been initialized but is waiting for further instructions."
+            }`,
             type: "markdown",
           };
         } else {

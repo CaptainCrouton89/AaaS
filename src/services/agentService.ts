@@ -10,7 +10,6 @@ import { ToolResult } from "../tools/async-tools/baseTool";
 import { Agent, AgentInsert, AgentWithTasks, Task } from "../types/database";
 import agentMessageHistoryService from "./agentMessageHistoryService";
 import taskService from "./taskService";
-
 interface WebhookJob {
   toolName: string;
   toolCallId: string;
@@ -50,7 +49,7 @@ export class AgentService {
     return await agentRepository.create(data);
   }
 
-  public async initializeAgent(agentId: string) {
+  public async initializeAgent(agentId: string, startWorkImmediately: boolean) {
     const agent = await this.getAgentById(agentId);
     if (!agent) {
       throw new Error("Agent not found");
@@ -61,10 +60,12 @@ export class AgentService {
       content: getInitializationPrompt(agent),
     });
 
-    await this.chatWithAgent(agentId, {
-      role: "user",
-      content: `Begin working on your tasks.`,
-    });
+    if (startWorkImmediately) {
+      await this.chatWithAgent(agentId, {
+        role: "user",
+        content: `Begin working on your tasks.`,
+      });
+    }
   }
 
   public async sendMessageFromAgentToAgent(

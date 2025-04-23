@@ -3,6 +3,7 @@ import { toolRegistry } from "./baseTool";
 // Import all tools to make sure they are registered
 import "./crawlTool";
 import "./deepSearchTool";
+import "./programming";
 import "./scrapeTool";
 import "./waitTool";
 import "./writeReportTool";
