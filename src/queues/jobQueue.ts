@@ -1,5 +1,7 @@
 import axios from "axios";
 import Queue from "bull";
+import { truncateText } from "../lib/utils";
+import { agentService } from "../services";
 import { executeTool } from "../tools/async-tools/baseTool";
 
 // Interface for job data
@@ -35,8 +37,14 @@ jobQueue.process(5, async (job) => {
     console.log(`Processing job ${job.id} for tool: ${toolName}`);
     console.log(`Tool arguments:`, args);
 
+    const agent = await agentService.getAgentById(agentId);
+
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
     // Execute the tool
-    const toolResult = await executeTool(toolName, agentId, args);
+    const toolResult = await executeTool(toolName, agent, args);
     job.progress(100);
 
     if (toolResult.success) {
@@ -119,7 +127,10 @@ jobQueue.process(5, async (job) => {
 
 // Event listeners
 jobQueue.on("completed", (job, result) => {
-  console.log(`Job ${job.id} has been completed with result:`, result);
+  console.log(
+    `Job ${job.id} has been completed with result:`,
+    truncateText(JSON.stringify(result), { length: 100 })
+  );
 });
 
 jobQueue.on("failed", (job, error) => {

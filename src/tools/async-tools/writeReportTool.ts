@@ -134,19 +134,18 @@ export class WriteReportTool extends BaseAsyncJobTool<WriteReportToolArgs> {
     "Writes a comprehensive report based on task research and context";
 
   async execute(
-    agentId: string,
+    agent: Agent,
     { researchDepth }: WriteReportToolArgs
   ): Promise<ToolResult> {
     try {
       console.log(`writeReportTool executing with depth: ${researchDepth}`);
 
-      const agent = await agentService.getAgentById(agentId);
-      const tasks = await taskService.getTasksByOwnerId(agentId);
-      const allData = await contextService.getAllContextsByAgentId(agentId);
+      const tasks = await taskService.getTasksByOwnerId(agent.id);
+      const allData = await contextService.getAllContextsByAgentId(agent.id);
 
       const result = await generateObject({
         model: openai("gpt-4.1-mini"),
-        system: outlineSystemPrompt(agent!, tasks),
+        system: outlineSystemPrompt(agent, tasks),
         prompt: `${allData}
         
         Write a report with a depth of ${researchDepth}, where a depth of 1 is a high level overview and a depth of 10 is a 20 page report. Focus on outlining just the content, skipping the introduction and conclusion.`,

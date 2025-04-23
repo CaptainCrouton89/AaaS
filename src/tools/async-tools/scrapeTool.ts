@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import axios from "axios";
 import { z } from "zod";
+import { Agent } from "../../types/database";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
 
@@ -45,7 +46,7 @@ export class ScrapeTool extends BaseAsyncJobTool<ScrapeToolArgs> {
   }
 
   async execute(
-    agentId: string,
+    agent: Agent,
     { url, formats, onlyMainContent, timeout }: ScrapeToolArgs
   ): Promise<ToolResult> {
     console.log(`scrapeTool executing for URL: ${url}`);

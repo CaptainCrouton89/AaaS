@@ -11,12 +11,6 @@ import * as readline from "readline/promises";
 const md = new MarkdownIt();
 const program = new Command();
 
-// Handle Ctrl+C gracefully
-process.on("SIGINT", () => {
-  console.log(chalk.blue("\nExiting CLI. Goodbye!"));
-  process.exit(0);
-});
-
 program
   .name("aas-cli")
   .description("CLI for interacting with AaaS agents")
@@ -27,20 +21,7 @@ async function getAvailableAgents() {
   const apiBaseUrl = process.env.API_BASE_URL || "http://localhost:3800";
   try {
     const response = await axios.get(`${apiBaseUrl}/api/agents`);
-
-    // Extract the agents array from the response
-    let agents = response.data;
-
-    // Check if the response has an 'agents' property
-    if (
-      response.data &&
-      typeof response.data === "object" &&
-      response.data.agents
-    ) {
-      agents = response.data.agents;
-    }
-
-    return agents;
+    return response.data;
   } catch (error: any) {
     if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
       console.error(chalk.red("\nError: Cannot connect to the AaaS server."));
@@ -69,13 +50,8 @@ async function promptForAgentSelection() {
   try {
     const agents = await getAvailableAgents();
 
-    // Ensure we have a valid array of agents
-    if (!agents || !Array.isArray(agents) || agents.length === 0) {
-      console.error(
-        chalk.red(
-          "\nNo agents available or invalid response format from server."
-        )
-      );
+    if (!agents || agents.length === 0) {
+      console.error(chalk.red("\nNo agents available."));
       console.error(
         chalk.yellow(
           "Please create an agent first using the AaaS API or web interface."
@@ -85,21 +61,13 @@ async function promptForAgentSelection() {
       process.exit(1);
     }
 
-    // Configure inquirer to handle Ctrl+C
-    inquirer.prompt.prompts.list.prototype.onEnd = function (state: any) {
-      if (state.answer === undefined) {
-        console.log(chalk.blue("\nExiting CLI. Goodbye!"));
-        process.exit(0);
-      }
-    };
-
     const { selectedAgent } = await inquirer.prompt([
       {
         type: "list",
         name: "selectedAgent",
         message: "Select an agent to chat with:",
         choices: agents.map((agent: any) => ({
-          name: `${agent.title || "Unnamed Agent"} (${agent.id})`,
+          name: `${agent.name || "Unnamed Agent"} (${agent.id})`,
           value: agent.id,
         })),
       },
@@ -114,29 +82,16 @@ async function promptForAgentSelection() {
 
 // Function to configure API base URL
 async function configureApiBaseUrl() {
-  try {
-    // Configure inquirer to handle Ctrl+C
-    inquirer.prompt.prompts.input.prototype.onEnd = function (state: any) {
-      if (state.answer === undefined) {
-        console.log(chalk.blue("\nExiting CLI. Goodbye!"));
-        process.exit(0);
-      }
-    };
+  const { apiBaseUrl } = await inquirer.prompt([
+    {
+      type: "input",
+      name: "apiBaseUrl",
+      message: "Enter the AaaS API base URL:",
+      default: process.env.API_BASE_URL || "http://localhost:3800",
+    },
+  ]);
 
-    const { apiBaseUrl } = await inquirer.prompt([
-      {
-        type: "input",
-        name: "apiBaseUrl",
-        message: "Enter the AaaS API base URL:",
-        default: process.env.API_BASE_URL || "http://localhost:3800",
-      },
-    ]);
-
-    return apiBaseUrl;
-  } catch (error) {
-    console.error(chalk.red("Error configuring API URL:"), error);
-    process.exit(1);
-  }
+  return apiBaseUrl;
 }
 
 // Function to send a single message
@@ -231,13 +186,6 @@ async function startInteractiveChat(
   const rl = readline.createInterface({ input, output });
   const baseUrl =
     apiBaseUrl || process.env.API_BASE_URL || "http://localhost:3800";
-
-  // Handle Ctrl+C in interactive mode
-  rl.on("SIGINT", () => {
-    console.log(chalk.blue("\nChat session ended."));
-    rl.close();
-    process.exit(0);
-  });
 
   console.log(
     chalk.blue(
@@ -358,16 +306,10 @@ program
     }
   });
 
-// Default command (when no command is specified)
-program
-  .addHelpCommand()
-  .allowUnknownOption(false)
-  .showHelpAfterError(true)
-  .command("start", { isDefault: true, hidden: true })
-  .description("Start interactive chat with an agent")
-  .action(async () => {
-    const agentId = await promptForAgentSelection();
-    await startInteractiveChat(agentId, false);
-  });
+// Add a default command that just starts the chat
+program.action(async () => {
+  const agentId = await promptForAgentSelection();
+  await startInteractiveChat(agentId, false);
+});
 
 program.parse(process.argv);

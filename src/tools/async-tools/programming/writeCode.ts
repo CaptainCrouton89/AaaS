@@ -3,6 +3,7 @@ import { generateObject, generateText, tool } from "ai";
 import * as fs from "fs";
 import * as path from "path";
 import { z } from "zod";
+import { Agent } from "../../../types/database";
 import { JobResponse } from "../../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "../baseTool";
 import { FunctionContextType, getProgrammingSystemPrompt } from "./formatting";
@@ -185,10 +186,16 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
   }
 
   async execute(
-    agentId: string,
+    agent: Agent,
     { fileContext, relativeFilePath }: WriteCodeToolArgs
   ): Promise<ToolResult> {
-    console.log(`writeCodeTool executing for file context: ${fileContext}`);
+    console.log(
+      `writeCodeTool executing for file context: ${JSON.stringify(
+        fileContext,
+        null,
+        2
+      )}`
+    );
 
     try {
       const codeResult = await generateText({
@@ -201,11 +208,25 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
         Return only the raw code, no other text.`,
       });
 
-      console.log(`Code result: ${codeResult.text}`);
+      let codeContent = codeResult.text.trim();
+      // Strip markdown code block fences if present
+      const codeBlockRegex = /^```(?:\w+)?\n([\s\S]*?)\n```$/;
+      const match = codeContent.match(codeBlockRegex);
+      if (match && match[1]) {
+        codeContent = match[1].trim();
+      }
+
+      if (!agent.cwd) {
+        return {
+          success: false,
+          type: "markdown",
+          data: `Error writing code: Agent has no working directory`,
+        };
+      }
 
       // Save the generated code to a file
-      const absoluteFilePath = path.resolve(process.cwd(), relativeFilePath);
-      const saveResult = this.saveCodeToFile(absoluteFilePath, codeResult.text);
+      const absoluteFilePath = path.resolve(agent.cwd, relativeFilePath);
+      const saveResult = this.saveCodeToFile(absoluteFilePath, codeContent);
 
       if (!saveResult.success) {
         return {
@@ -219,7 +240,7 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
         success: true,
         type: "json",
         data: {
-          code: codeResult.text,
+          code: codeContent,
           filePath: absoluteFilePath,
           saved: true,
         },
@@ -245,6 +266,11 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       }),
       execute: async ({ projectBreakdown }): Promise<ToolResult> => {
         try {
+          console.log(
+            "Starting writeCodeTool execution with project breakdown:",
+            projectBreakdown
+          );
+
           const executiveSummary = await generateObject({
             model: openai("gpt-4.1-mini"),
             system: getExecutiveSummarySystemPrompt(),
@@ -254,10 +280,27 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
 
           // Add validation for the executive summary
           if (!executiveSummary.object) {
+            console.error(
+              "Failed to generate executive summary: No object returned"
+            );
             throw new Error("Failed to generate executive summary");
           }
 
+          console.log(
+            "Executive summary generated successfully:",
+            JSON.stringify(executiveSummary.object, null, 2)
+          );
+
+          // Ensure subDirectories exists even if empty
+          if (!executiveSummary.object.subDirectories) {
+            console.log(
+              "Adding missing subDirectories array to executive summary"
+            );
+            executiveSummary.object.subDirectories = [];
+          }
+
           try {
+            console.log("Generating detailed architecture...");
             const { object: architectureObject } = await generateObject({
               model: openai("gpt-4.1-mini"),
               system: getDetailedFileStructureSystemPrompt(),
@@ -266,6 +309,24 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
               ),
               schema: DetailedDirectorySchema,
             });
+
+            console.log(
+              "Detailed architecture generated successfully:",
+              JSON.stringify(architectureObject, null, 2)
+            );
+
+            // Ensure all directory objects have subDirectories arrays
+            const ensureSubDirectories = (dir: DetailedDirectory) => {
+              if (!dir.subDirectories) {
+                dir.subDirectories = [];
+              }
+
+              for (const subDir of dir.subDirectories) {
+                ensureSubDirectories(subDir);
+              }
+            };
+
+            ensureSubDirectories(architectureObject);
 
             // Process all files in the architecture
             const jobPromises: Promise<JobResponse>[] = [];
@@ -319,8 +380,75 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
             if (architectureError.cause?.value) {
               console.error(
                 "Raw response causing validation error:",
-                architectureError.cause.value
+                JSON.stringify(architectureError.cause.value, null, 2)
               );
+
+              // Try to extract required fields from failed response
+              try {
+                const failedValue = architectureError.cause.value;
+                if (failedValue && typeof failedValue === "object") {
+                  console.log("Attempting to recover from validation error...");
+
+                  // Check which required fields are missing
+                  if (failedValue.name && Array.isArray(failedValue.files)) {
+                    console.log(
+                      "Basic directory structure found, checking for missing subDirectories"
+                    );
+
+                    // If the object has the structure but is missing subDirectories, add it
+                    if (!failedValue.subDirectories) {
+                      console.log("Adding missing subDirectories array");
+                      failedValue.subDirectories = [];
+
+                      // Try processing with the fixed structure
+                      const jobPromises: Promise<JobResponse>[] = [];
+
+                      // Process each file in the root directory
+                      for (const file of failedValue.files) {
+                        // Ensure functionParams is set to null if undefined
+                        if (file.functionsWithin) {
+                          file.functionsWithin = file.functionsWithin.map(
+                            (func: any) => ({
+                              ...func,
+                              functionParams: func.functionParams ?? null,
+                            })
+                          );
+                        } else {
+                          file.functionsWithin = [];
+                        }
+
+                        const filePath = file.name;
+                        console.log(
+                          `Recovered file: ${filePath}, fileContext: ${JSON.stringify(
+                            file,
+                            null,
+                            2
+                          )}, agentId: ${agentId}`
+                        );
+                        const jobPromise = this.callAsyncTool(
+                          {
+                            fileContext: file,
+                            relativeFilePath: filePath,
+                          },
+                          agentId
+                        );
+                        jobPromises.push(jobPromise);
+                      }
+
+                      // Await all job promises
+                      const jobResponses = await Promise.all(jobPromises);
+
+                      return {
+                        success: true,
+                        data: `Your code generation has been queued for ${jobResponses.length} files in the project. Note: Recovery mode was used due to schema validation issues. Files will be automatically saved to disk when generated. You will be notified when each file is ready.`,
+                        type: "markdown",
+                      };
+                    }
+                  }
+                }
+              } catch (recoveryError) {
+                console.error("Error during recovery attempt:", recoveryError);
+              }
             }
             throw new Error(
               `Failed to generate detailed architecture: ${

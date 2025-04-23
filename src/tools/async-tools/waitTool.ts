@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { Agent } from "../../types/database";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
 
@@ -12,7 +13,7 @@ export class WaitTool extends BaseAsyncJobTool<WaitToolArgs> {
   readonly description = "Waits for a specified duration before continuing";
 
   async execute(
-    agentId: string,
+    agent: Agent,
     { durationMs }: WaitToolArgs
   ): Promise<ToolResult> {
     try {

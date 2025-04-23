@@ -2,6 +2,7 @@ import { tool } from "ai";
 import axios from "axios";
 import { z } from "zod";
 import { contextService, taskService } from "../../services";
+import { Agent } from "../../types/database";
 import { JobResponse } from "../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
 
@@ -175,7 +176,7 @@ export class DeepSearchTool extends BaseAsyncJobTool<DeepSearchToolArgs> {
   }
 
   async execute(
-    agentId: string,
+    agent: Agent,
     {
       query,
       taskId,

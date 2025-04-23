@@ -1,4 +1,5 @@
 import { Tool } from "ai";
+import { Agent } from "../../types/database";
 import { callAsyncTool } from "../utils";
 
 // Interface for tool execution result
@@ -13,7 +14,7 @@ export interface ToolResult {
 export abstract class BaseAsyncJobTool<T> {
   abstract readonly name: string;
   abstract readonly description: string;
-  abstract execute(agentId: string, args: T): Promise<ToolResult>;
+  abstract execute(agent: Agent, args: T): Promise<ToolResult>;
   abstract getSynchronousTool(agentId: string): Tool;
 
   callAsyncTool(args: T, agentId: string) {
@@ -71,7 +72,7 @@ export const toolRegistry = ToolRegistry.getInstance();
 // Function to execute a tool by name
 export async function executeTool<T>(
   toolName: string,
-  agentId: string,
+  agent: Agent,
   args: T
 ): Promise<ToolResult> {
   const tool = toolRegistry.getTool(toolName);
@@ -85,7 +86,7 @@ export async function executeTool<T>(
   }
 
   try {
-    return await tool.execute(agentId, args as T);
+    return await tool.execute(agent, args as T);
   } catch (error) {
     return {
       success: false,
@@ -96,7 +97,7 @@ export async function executeTool<T>(
         }`,
         stack: error instanceof Error ? error.stack : String(error),
         toolName: toolName,
-        agentId: agentId,
+        agentId: agent.id,
         args: args,
       }),
     };

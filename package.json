@@ -13,7 +13,11 @@
     "db:pull": "npx supabase gen types typescript --project-id 'glpwhhzbtexzqoghbwuy' --schema public > src/types/database.types.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "cli": "node cli/dist/index.js",
-    "build:cli": "pnpm --filter ./cli build"
+    "cli:chat": "node cli/dist/index.js chat",
+    "cli:verbose": "node cli/dist/index.js chat -v",
+    "cli:config": "node cli/dist/index.js config",
+    "build:cli": "pnpm --filter ./cli build",
+    "install:cli": "pnpm --filter ./cli install-global"
   },
   "keywords": [],
   "author": "",
