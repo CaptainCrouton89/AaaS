@@ -1,5 +1,7 @@
 import { openai } from "@ai-sdk/openai";
 import { generateObject, generateText, tool } from "ai";
+import * as fs from "fs";
+import * as path from "path";
 import { z } from "zod";
 import { JobResponse } from "../../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "../baseTool";
@@ -107,9 +109,6 @@ const DetailedDirectorySchema: z.ZodType<DetailedDirectory> = z.lazy(() =>
   })
 );
 
-/**
- * Tool for scraping web pages using Hyperbrowser's API
- */
 export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
   readonly name = "writeCode";
   readonly description =
@@ -127,6 +126,61 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       console.warn(
         "HYPERBROWSER_API_KEY is not set. Scrape tool might not work properly."
       );
+    }
+  }
+
+  /**
+   * Ensures that a directory exists, creating it recursively if needed
+   * @param dirPath The directory path to ensure exists
+   */
+  private ensureDirectoryExists(dirPath: string): void {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+  }
+
+  /**
+   * Normalizes a file path to ensure consistent format
+   * @param filePath The file path to normalize
+   * @returns The normalized file path
+   */
+  private normalizeFilePath(filePath: string): string {
+    // Ensure the path is absolute
+    if (!path.isAbsolute(filePath)) {
+      filePath = path.resolve(process.cwd(), filePath);
+    }
+    return filePath;
+  }
+
+  /**
+   * Saves code to a file, creating directories as needed
+   * @param filePath The path where the file should be saved
+   * @param code The code content to save
+   * @returns Object containing success status and any error message
+   */
+  private saveCodeToFile(
+    filePath: string,
+    code: string
+  ): { success: boolean; error?: string } {
+    try {
+      // Normalize the file path
+      const normalizedPath = this.normalizeFilePath(filePath);
+
+      // Get the directory path
+      const dirPath = path.dirname(normalizedPath);
+
+      // Ensure the directory exists
+      this.ensureDirectoryExists(dirPath);
+
+      // Write the file
+      fs.writeFileSync(normalizedPath, code, "utf8");
+
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(`Error saving file to ${filePath}:`, errorMessage);
+      return { success: false, error: errorMessage };
     }
   }
 
@@ -149,10 +203,26 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
 
       console.log(`Code result: ${codeResult.text}`);
 
+      // Save the generated code to a file
+      const absoluteFilePath = path.resolve(process.cwd(), relativeFilePath);
+      const saveResult = this.saveCodeToFile(absoluteFilePath, codeResult.text);
+
+      if (!saveResult.success) {
+        return {
+          success: false,
+          type: "markdown",
+          data: `Generated code successfully but failed to save to file: ${saveResult.error}`,
+        };
+      }
+
       return {
         success: true,
         type: "json",
-        data: { code: codeResult.text },
+        data: {
+          code: codeResult.text,
+          filePath: absoluteFilePath,
+          saved: true,
+        },
       };
     } catch (error) {
       console.error("Error in writeCodeTool:", error);
@@ -237,7 +307,7 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
 
             return {
               success: true,
-              data: `Your code generation has been queued for ${jobResponses.length} files in the project. You will be notified when each file is ready.`,
+              data: `Your code generation has been queued for ${jobResponses.length} files in the project. Files will be automatically saved to disk when generated. You will be notified when each file is ready.`,
               type: "markdown",
             };
           } catch (architectureError: any) {
