@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "description": "A simple job queue service using Bull and Redis",
   "main": "dist/server.js",
+  "bin": {
+    "aaas": "dist/cli/index.js"
+  },
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "db:pull": "npx supabase gen types typescript --project-id 'glpwhhzbtexzqoghbwuy' --schema public > src/types/database.types.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "cli": "ts-node src/cli/index.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,9 +25,14 @@
     "ai": "^4.3.9",
     "axios": "^1.8.4",
     "bull": "^4.16.5",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "conf": "^10.2.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "inquirer": "^8.2.6",
     "ioredis": "^5.6.1",
+    "ora": "^5.4.1",
     "supabase": "^2.20.12",
     "ts-dedent": "^2.2.0",
     "zod": "^3.24.3"
@@ -33,6 +42,7 @@
     "@bull-board/express": "^6.9.2",
     "@types/bull": "^4.10.4",
     "@types/express": "^5.0.1",
+    "@types/inquirer": "^9.0.7",
     "@types/node": "^22.14.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.3"
