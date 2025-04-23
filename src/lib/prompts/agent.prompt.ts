@@ -7,6 +7,7 @@ import {
   getSpawnAgentTool,
   removeAgentTool,
 } from "../../tools/agent-management";
+import { getAddNewNoteTool } from "../../tools/alaria";
 import { toolRegistry } from "../../tools/async-tools";
 import {
   // appendToContextTool,
@@ -27,15 +28,17 @@ import {
 } from "../../tools/task-management";
 import { getTasksByAgentTool } from "../../tools/task-queries";
 import { Agent } from "../../types/database";
+import { alariaWikiEditorSystemPrompt } from "./alariaWikiEditor.system.prompt";
 import { projectManagerTemplate } from "./projectManager.system.prompt";
 import { researchAssistantTemplate } from "./researcher.system.prompt";
-
 export const getAgentTemplate = (agentType: AgentType) => {
   switch (agentType) {
     case AgentType.RESEARCH_ASSISTANT:
       return researchAssistantTemplate;
     case AgentType.PROJECT_MANAGER:
       return projectManagerTemplate;
+    case AgentType.ALARIA_WIKI_EDITOR:
+      return alariaWikiEditorSystemPrompt;
     default:
       return projectManagerTemplate;
   }
@@ -84,6 +87,11 @@ export const getAgentTools = (agent: Agent): ToolSet => {
         deleteContext: deleteContextTool,
         updateTaskContext: updateTaskContextTool,
         updateAgentContext: updateAgentContextTool,
+      };
+    case AgentType.ALARIA_WIKI_EDITOR:
+      return {
+        ...defaultAgentTools(agent.id),
+        addNewNote: getAddNewNoteTool(),
       };
     default:
       return defaultAgentTools(agent.id);
