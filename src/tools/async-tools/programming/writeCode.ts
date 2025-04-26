@@ -1,12 +1,14 @@
+import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { generateObject, generateText, tool } from "ai";
+import { generateText, tool } from "ai";
 import * as fs from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Agent } from "../../../types/database";
 import { JobResponse } from "../../utils";
 import { BaseAsyncJobTool, ToolResult, toolRegistry } from "../baseTool";
-import { FunctionContextType, getProgrammingSystemPrompt } from "./formatting";
+import { getProgrammingSystemPrompt } from "./formatting";
+import { PathRegistry, Registry } from "./pathRegistry";
 import {
   getDetailedFileStructureSystemPrompt,
   getDetailedFileStructureUserPrompt,
@@ -15,118 +17,154 @@ import {
   getExecutiveSummarySystemPrompt,
   getExecutiveSummaryUserPrompt,
 } from "./prompts/executiveSummary.prompt";
+import { Directory, File } from "./types";
 
 // Type for ScrapeTool arguments
 type WriteCodeToolArgs = {
-  fileContext: DetailedFile;
+  executiveSummary: string;
+  fileContext: File;
   relativeFilePath: string;
+  pathRegistry: Registry;
 };
 
 interface WriteCodeResponseData {}
 
-type Directory = {
-  name: string;
-  files: File[];
-  subDirectories: Directory[];
-};
-
-type File = {
-  name: string;
-  description: string;
-  dependencies: string[];
-};
-
-type DetailedFile = {
-  name: string;
-  description: string;
-  dependencies: string[];
-  functionsWithin: FunctionContextType[];
-};
-
-type DetailedDirectory = {
-  name: string;
-  files: DetailedFile[];
-  subDirectories: DetailedDirectory[];
-};
-
-const FileSchema = z.lazy(() =>
-  z.object({
-    name: z.string(),
-    description: z.string(),
-    dependencies: z.array(z.string()),
-  })
-);
-
-const DirectorySchema: z.ZodType<Directory> = z.lazy(() =>
-  z.object({
-    name: z.string(),
-    files: z.array(FileSchema),
-    subDirectories: z.array(DirectorySchema),
-  })
-);
-
-const FunctionContextTypeSchema: z.ZodType<FunctionContextType> = z.object({
-  functionName: z.string().describe("The name of the function"),
-  functionDescription: z
-    .string()
-    .describe(
-      "A brief, information-rich description of what the function does"
-    ),
-  functionParams: z
-    .record(
-      z.string().describe("The name of the parameter"),
-      z.string().describe("The type of the parameter")
-    )
-    .nullable()
-    .transform((val) => (val === undefined ? null : val))
-    .describe("The parameters of the function"),
-  functionReturnType: z
-    .string()
-    .describe("The type of data returned by the function"),
-});
-
-const DetailedFileSchema: z.ZodType<DetailedFile> = z.lazy(() =>
-  z.object({
-    name: z.string().describe("The name of the file"),
-    description: z
-      .string()
-      .describe("A brief, information-rich description of the file"),
-    dependencies: z
-      .array(z.string())
-      .describe(
-        "The internal dependencies of the file, including other files and functions"
-      ),
-    functionsWithin: z
-      .array(FunctionContextTypeSchema)
-      .describe("The functions within the file"),
-  })
-);
-
-const DetailedDirectorySchema: z.ZodType<DetailedDirectory> = z.lazy(() =>
-  z.object({
-    name: z.string().describe("The name of the directory"),
-    files: z.array(DetailedFileSchema),
-    subDirectories: z.array(DetailedDirectorySchema),
-  })
-);
+// Log entry interface
+interface LogEntry {
+  timestamp: string;
+  source: string;
+  stage: string;
+  type: string;
+  data: any;
+}
 
 export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
   readonly name = "writeCode";
-  readonly description =
-    "Writes code for a given project using Hyperbrowser's API";
-  private apiKey: string;
-  private apiUrl: string;
+  readonly description = "Writes code for a given project";
+  private logDir: string;
+  private runId: string;
+  private logEntries: LogEntry[] = [];
+  private logFilePath: string;
 
   constructor() {
     super();
-    this.apiKey = process.env.HYPERBROWSER_API_KEY || "";
-    this.apiUrl =
-      process.env.HYPERBROWSER_API_URL || "https://app.hyperbrowser.ai/api";
+    this.logDir = path.resolve(process.cwd(), "logs", "writeCodeTool");
+    this.ensureLogDirectory();
+    this.runId = this.generateRunId();
+    this.logFilePath = path.join(this.logDir, `${this.runId}.json`);
+  }
 
-    if (!this.apiKey) {
-      console.warn(
-        "HYPERBROWSER_API_KEY is not set. Scrape tool might not work properly."
+  /**
+   * Generates a unique run ID based on timestamp
+   */
+  private generateRunId(): string {
+    return `run_${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  }
+
+  /**
+   * Creates a new run ID and log file for a new execution
+   */
+  private startNewRun(): void {
+    this.runId = this.generateRunId();
+    this.logEntries = [];
+    this.logFilePath = path.join(this.logDir, `${this.runId}.json`);
+    // Initialize the log file with an empty array
+    fs.writeFileSync(this.logFilePath, JSON.stringify([], null, 2), "utf8");
+    console.log(`Started new log run: ${this.runId}`);
+  }
+
+  /**
+   * Ensures that the log directory exists
+   */
+  private ensureLogDirectory(): void {
+    if (!fs.existsSync(this.logDir)) {
+      fs.mkdirSync(this.logDir, { recursive: true });
+      console.log(`Created log directory at ${this.logDir}`);
+    }
+  }
+
+  /**
+   * Adds a log entry and updates the log file
+   * @param source The source of the log (e.g., 'sync', 'async')
+   * @param stage The processing stage (e.g., 'executiveSummary', 'architecture')
+   * @param type The type of log (e.g., 'input', 'output')
+   * @param data The data to log
+   */
+  private addLogEntry(
+    source: string,
+    stage: string,
+    type: string,
+    data: any
+  ): void {
+    try {
+      // Format the data for better readability if it's JSON or contains JSON
+      let formattedData = data;
+
+      if (typeof data === "string") {
+        // Try to detect and parse JSON in the string (handles both raw JSON and code blocks)
+        const jsonRegex = /```(?:json)?\s*(\{[\s\S]*?\})\s*```|(\{[\s\S]*?\})/g;
+        const matches = [...data.matchAll(jsonRegex)];
+
+        if (matches.length > 0) {
+          let processedData = data;
+          for (const match of matches) {
+            const jsonStr = match[1] || match[2]; // Get the matched JSON string
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const formatted = JSON.stringify(parsed, null, 2);
+              // Replace the original JSON with the prettified version
+              if (match[1]) {
+                // It was in a code block
+                processedData = processedData.replace(
+                  match[0],
+                  "```json\n" + formatted + "\n```"
+                );
+              } else {
+                processedData = processedData.replace(match[0], formatted);
+              }
+            } catch (parseError: Error | unknown) {
+              // If parsing fails, leave as-is
+              console.log(
+                `Failed to parse JSON in string: ${
+                  parseError instanceof Error
+                    ? parseError.message
+                    : String(parseError)
+                }`
+              );
+            }
+          }
+          formattedData = processedData;
+        }
+      } else if (typeof data === "object" && data !== null) {
+        // Convert object to formatted JSON string
+        try {
+          formattedData = JSON.stringify(data, null, 2);
+        } catch (stringifyError) {
+          console.error("Error stringifying object:", stringifyError);
+          formattedData = String(data);
+        }
+      }
+
+      const logEntry: LogEntry = {
+        timestamp: new Date().toISOString(),
+        source,
+        stage,
+        type,
+        data: formattedData,
+      };
+
+      this.logEntries.push(logEntry);
+
+      // Update the log file with all entries
+      fs.writeFileSync(
+        this.logFilePath,
+        JSON.stringify(this.logEntries, null, 2),
+        "utf8"
       );
+
+      console.log(`Added log entry for ${source}:${stage}:${type}`);
+    } catch (error) {
+      console.error(`Error adding log entry for ${stage} ${type}:`, error);
     }
   }
 
@@ -187,7 +225,12 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
 
   async execute(
     agent: Agent,
-    { fileContext, relativeFilePath }: WriteCodeToolArgs
+    {
+      executiveSummary,
+      fileContext,
+      relativeFilePath,
+      pathRegistry,
+    }: WriteCodeToolArgs
   ): Promise<ToolResult> {
     console.log(
       `writeCodeTool executing for file context: ${JSON.stringify(
@@ -197,15 +240,34 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       )}`
     );
 
+    const importedPathRegistry = new PathRegistry(pathRegistry);
+
+    const context = importedPathRegistry.formatContextFromImports(
+      fileContext.imports
+    );
+
+    const prompt = `
+        ${executiveSummary}
+
+        Relevant file context:
+        ${context}
+
+        Write the code for the file ${relativeFilePath} with the following specifications:
+        ${fileContext}
+        
+        Return only the raw code, no other text.`;
+
+    // Log the input for code generation
+    this.addLogEntry("async", "writeCode", "input", {
+      system: getProgrammingSystemPrompt(),
+      user: prompt,
+    });
+
     try {
       const codeResult = await generateText({
-        model: openai("gpt-4.1-mini"),
-        system: getProgrammingSystemPrompt([]),
-        prompt: `Write the code for the file ${relativeFilePath} with the following context: ${JSON.stringify(
-          fileContext
-        )}
-        
-        Return only the raw code, no other text.`,
+        model: anthropic("claude-3-7-sonnet-20250219"),
+        system: getProgrammingSystemPrompt(),
+        prompt,
       });
 
       let codeContent = codeResult.text.trim();
@@ -217,6 +279,13 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       }
 
       if (!agent.cwd) {
+        // Log the error
+        this.addLogEntry(
+          "async",
+          "writeCode",
+          "error",
+          "Agent has no working directory"
+        );
         return {
           success: false,
           type: "markdown",
@@ -224,17 +293,28 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
         };
       }
 
+      // Log the generated code
+      this.addLogEntry("async", "writeCode", "output", codeContent);
+
       // Save the generated code to a file
       const absoluteFilePath = path.resolve(agent.cwd, relativeFilePath);
       const saveResult = this.saveCodeToFile(absoluteFilePath, codeContent);
 
       if (!saveResult.success) {
+        // Log the save error
+        this.addLogEntry("async", "writeCode", "error", saveResult.error);
         return {
           success: false,
           type: "markdown",
           data: `Generated code successfully but failed to save to file: ${saveResult.error}`,
         };
       }
+
+      // Log successful save
+      this.addLogEntry("async", "writeCode", "success", {
+        filePath: absoluteFilePath,
+        saved: true,
+      });
 
       return {
         success: true,
@@ -247,6 +327,14 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       };
     } catch (error) {
       console.error("Error in writeCodeTool:", error);
+
+      // Log the error
+      this.addLogEntry(
+        "async",
+        "writeCode",
+        "error",
+        error instanceof Error ? error.message : String(error)
+      );
 
       return {
         success: false,
@@ -262,91 +350,366 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
     return tool({
       description: this.description,
       parameters: z.object({
-        projectBreakdown: z.string().describe("Project breakdown"),
+        projectDescription: z
+          .string()
+          .describe("Project description (4-5 sentences, non-technical)"),
       }),
-      execute: async ({ projectBreakdown }): Promise<ToolResult> => {
+      execute: async ({ projectDescription }): Promise<ToolResult> => {
         try {
+          // Start a new log run for this execution
+          this.startNewRun();
+
           console.log(
-            "Starting writeCodeTool execution with project breakdown:",
-            projectBreakdown
+            "Starting writeCodeTool execution with project description:",
+            projectDescription
           );
 
-          const executiveSummary = await generateObject({
-            model: openai("gpt-4.1-mini"),
+          // Log the inputs for executive summary
+          const executiveSummaryInput = {
             system: getExecutiveSummarySystemPrompt(),
-            prompt: getExecutiveSummaryUserPrompt(projectBreakdown),
-            schema: DirectorySchema,
+            user: getExecutiveSummaryUserPrompt(projectDescription),
+          };
+
+          this.addLogEntry(
+            "sync",
+            "executiveSummary",
+            "input",
+            executiveSummaryInput
+          );
+
+          const executiveSummary = await generateText({
+            model: openai("gpt-4.1"),
+            system: executiveSummaryInput.system,
+            prompt: executiveSummaryInput.user,
           });
 
           // Add validation for the executive summary
-          if (!executiveSummary.object) {
+          if (!executiveSummary.text) {
             console.error(
-              "Failed to generate executive summary: No object returned"
+              "Failed to generate executive summary: No text returned"
+            );
+            this.addLogEntry(
+              "sync",
+              "executiveSummary",
+              "error",
+              "No text returned from API"
             );
             throw new Error("Failed to generate executive summary");
           }
 
-          console.log(
-            "Executive summary generated successfully:",
-            JSON.stringify(executiveSummary.object, null, 2)
+          // Log the executive summary output
+          this.addLogEntry(
+            "sync",
+            "executiveSummary",
+            "output",
+            executiveSummary.text
           );
 
-          // Ensure subDirectories exists even if empty
-          if (!executiveSummary.object.subDirectories) {
-            console.log(
-              "Adding missing subDirectories array to executive summary"
-            );
-            executiveSummary.object.subDirectories = [];
-          }
+          console.log(
+            "Executive summary generated successfully:",
+            executiveSummary.text
+          );
 
           try {
             console.log("Generating detailed architecture...");
-            const { object: architectureObject } = await generateObject({
-              model: openai("gpt-4.1-mini"),
-              system: getDetailedFileStructureSystemPrompt(),
-              prompt: getDetailedFileStructureUserPrompt(
-                JSON.stringify(executiveSummary.object)
-              ),
-              schema: DetailedDirectorySchema,
+            console.log(
+              "Using text-based generation for architecture instead of generateObject"
+            );
+
+            // Prepare input for architecture generation
+            const architectureSystemPrompt =
+              getDetailedFileStructureSystemPrompt() +
+              "\n\nIMPORTANT: Return a valid JSON object that strictly follows the DirectorySchema format.";
+            const architectureUserPrompt =
+              getDetailedFileStructureUserPrompt(executiveSummary.text) +
+              "\n\nPlease ensure your response is valid JSON that can be parsed directly.";
+
+            // Log the input for architecture generation
+            this.addLogEntry("sync", "architecture", "input", {
+              system: architectureSystemPrompt,
+              user: architectureUserPrompt,
             });
+
+            const architectureTextResult = await generateText({
+              model: openai("gpt-4o"),
+              system: architectureSystemPrompt,
+              prompt: architectureUserPrompt,
+            });
+
+            // Log the raw architecture output
+            this.addLogEntry(
+              "sync",
+              "architecture",
+              "output",
+              architectureTextResult.text
+            );
+
+            console.log(
+              "Text generation complete, attempting to parse as JSON"
+            );
+            let architectureObject;
+            try {
+              // Try to parse the text as JSON
+              architectureObject = JSON.parse(architectureTextResult.text);
+              console.log("Successfully parsed architecture JSON");
+              // Log the parsed JSON
+              this.addLogEntry(
+                "sync",
+                "architecture",
+                "parsed",
+                architectureObject
+              );
+            } catch (parseError) {
+              console.error(
+                "Failed to parse architecture as JSON:",
+                parseError
+              );
+
+              // Log the parse error
+              this.addLogEntry("sync", "architecture", "parseError", {
+                error:
+                  parseError instanceof Error
+                    ? parseError.message
+                    : String(parseError),
+                rawText: architectureTextResult.text,
+              });
+
+              // Log the raw text
+              console.error("Raw response text:");
+              console.error(architectureTextResult.text);
+
+              // Try to extract JSON from the response using regex
+              try {
+                const jsonMatch =
+                  architectureTextResult.text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                  console.log(
+                    "Found potential JSON in the response, attempting to parse"
+                  );
+                  architectureObject = JSON.parse(jsonMatch[0]);
+                  console.log("Successfully parsed extracted JSON");
+                  // Log the extracted JSON
+                  this.addLogEntry(
+                    "sync",
+                    "architecture",
+                    "extractedParsed",
+                    architectureObject
+                  );
+                } else {
+                  this.addLogEntry(
+                    "sync",
+                    "architecture",
+                    "extractError",
+                    "No JSON object found in response"
+                  );
+                  throw new Error("No JSON object found in response");
+                }
+              } catch (extractError) {
+                console.error(
+                  "Failed to extract and parse JSON:",
+                  extractError
+                );
+                this.addLogEntry(
+                  "sync",
+                  "architecture",
+                  "extractError",
+                  extractError instanceof Error
+                    ? extractError.message
+                    : String(extractError)
+                );
+                throw new Error("Could not parse architecture from response");
+              }
+            }
 
             console.log(
               "Detailed architecture generated successfully:",
               JSON.stringify(architectureObject, null, 2)
             );
 
-            // Ensure all directory objects have subDirectories arrays
-            const ensureSubDirectories = (dir: DetailedDirectory) => {
-              if (!dir.subDirectories) {
-                dir.subDirectories = [];
+            const pathRegistry = new PathRegistry({});
+
+            // Register all directories in the architecture to the registry
+            const registerDirectories = (dir: Directory, path = "") => {
+              const currentPath = path ? `${path}/${dir.name}` : dir.name;
+              console.log(`Registering directory: ${currentPath}`);
+              pathRegistry.registerPath(currentPath, dir);
+
+              for (const file of dir.files) {
+                console.log(`Registering file: ${currentPath}/${file.name}`);
+                pathRegistry.registerPath(`${currentPath}/${file.name}`, file);
               }
 
               for (const subDir of dir.subDirectories) {
-                ensureSubDirectories(subDir);
+                console.log(
+                  `Processing subdirectory: ${subDir.name} in ${currentPath}`
+                );
+                registerDirectories(subDir, currentPath);
               }
             };
 
-            ensureSubDirectories(architectureObject);
+            // Use a safe conversion function to handle potential object structure issues
+            const convertToValidDirectory = (obj: any): Directory => {
+              console.log(
+                `Converting object to Directory: ${obj?.name || "unnamed"}`
+              );
+              if (!obj) {
+                console.error("Received null/undefined object to convert");
+                this.addLogEntry(
+                  "sync",
+                  "architecture",
+                  "conversionError",
+                  "Received null/undefined object to convert"
+                );
+                return { name: "root", files: [], subDirectories: [] };
+              }
+
+              const dir: Directory = {
+                name: obj.name || "root",
+                files: [],
+                subDirectories: [],
+              };
+
+              // Copy files if they exist
+              if (Array.isArray(obj.files)) {
+                console.log(
+                  `Converting ${obj.files.length} files in ${dir.name}`
+                );
+                dir.files = obj.files.map((f: any) => ({
+                  name: f.name || "untitled",
+                  description: f.description || "",
+                  imports: Array.isArray(f.imports) ? f.imports : [],
+                  exports: Array.isArray(f.exports) ? f.exports : [],
+                }));
+              } else {
+                console.warn(
+                  `No files array in ${
+                    dir.name
+                  } or invalid format: ${typeof obj.files}`
+                );
+                this.addLogEntry(
+                  "sync",
+                  "architecture",
+                  "warning",
+                  `No files array in ${
+                    dir.name
+                  } or invalid format: ${typeof obj.files}`
+                );
+              }
+
+              // Process subdirectories
+              if (Array.isArray(obj.subDirectories)) {
+                console.log(
+                  `Processing ${obj.subDirectories.length} subdirectories in ${dir.name}`
+                );
+                // Use a try/catch for each subdirectory to prevent a single bad one from breaking everything
+                const validSubDirs: Directory[] = [];
+                for (const subDir of obj.subDirectories) {
+                  if (!subDir || typeof subDir !== "object") {
+                    console.warn(
+                      `Skipping invalid subdirectory entry: ${typeof subDir}`
+                    );
+                    this.addLogEntry(
+                      "sync",
+                      "architecture",
+                      "warning",
+                      `Skipping invalid subdirectory entry: ${typeof subDir}`
+                    );
+                    continue;
+                  }
+                  try {
+                    const convertedSubDir = convertToValidDirectory(subDir);
+                    validSubDirs.push(convertedSubDir);
+                  } catch (error) {
+                    console.error(
+                      `Error converting subdirectory ${
+                        subDir?.name || "unnamed"
+                      } in ${dir.name}:`,
+                      error
+                    );
+                    this.addLogEntry(
+                      "sync",
+                      "architecture",
+                      "error",
+                      `Error converting subdirectory ${
+                        subDir?.name || "unnamed"
+                      } in ${dir.name}: ${
+                        error instanceof Error ? error.message : String(error)
+                      }`
+                    );
+                    // Don't add it to the valid ones
+                  }
+                }
+                dir.subDirectories = validSubDirs;
+              } else {
+                console.warn(
+                  `No subDirectories array in ${
+                    dir.name
+                  } or invalid format: ${typeof obj.subDirectories}`
+                );
+                this.addLogEntry(
+                  "sync",
+                  "architecture",
+                  "warning",
+                  `No subDirectories array in ${
+                    dir.name
+                  } or invalid format: ${typeof obj.subDirectories}`
+                );
+              }
+
+              console.log(
+                `Conversion complete for ${dir.name} with ${dir.files.length} files and ${dir.subDirectories.length} subdirectories`
+              );
+              return dir;
+            };
+
+            // Convert and register
+            console.log(
+              "Starting conversion of architectureObject to valid Directory structure"
+            );
+            console.log(
+              "Raw architectureObject structure:",
+              JSON.stringify(
+                typeof architectureObject === "object"
+                  ? Object.keys(architectureObject || {})
+                  : typeof architectureObject,
+                null,
+                2
+              )
+            );
+            const validDirStructure =
+              convertToValidDirectory(architectureObject);
+            console.log(
+              "Conversion completed, starting directory registration"
+            );
+            registerDirectories(validDirStructure, "");
+
+            console.log("All directories registered in the path registry");
+            this.addLogEntry("sync", "pathRegistry", "complete", {
+              totalPaths: Object.keys(pathRegistry.getRegistry()).length,
+            });
 
             // Process all files in the architecture
             const jobPromises: Promise<JobResponse>[] = [];
-            const processDirectory = (dir: DetailedDirectory, path = "") => {
+            const processDirectory = (dir: Directory, path = "") => {
               // Process each file in this directory
               for (const file of dir.files) {
-                // Ensure functionParams is set to null if undefined
-                file.functionsWithin = file.functionsWithin.map((func) => ({
-                  ...func,
-                  functionParams: func.functionParams ?? null,
-                }));
-
                 const filePath = path ? `${path}/${file.name}` : file.name;
                 console.log(
                   `filePath: ${filePath}, fileContext: ${file}, agentId: ${agentId}`
                 );
+
+                // Log each file being queued for processing
+                this.addLogEntry("sync", "queueing", "file", {
+                  filePath,
+                  fileContext: file,
+                });
+
                 const jobPromise = this.callAsyncTool(
                   {
+                    executiveSummary: executiveSummary.text,
                     fileContext: file,
                     relativeFilePath: filePath,
+                    pathRegistry: pathRegistry.getRegistry(),
                   },
                   agentId
                 );
@@ -361,10 +724,22 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
             };
 
             // Start processing from the root directory
-            processDirectory(architectureObject);
+            processDirectory(validDirStructure);
+
+            // Log the total number of jobs queued
+            this.addLogEntry("sync", "queueing", "complete", {
+              totalJobs: jobPromises.length,
+            });
 
             // Await all job promises at the end
             const jobResponses = await Promise.all(jobPromises);
+
+            // Log job responses
+            this.addLogEntry("sync", "jobResponses", "complete", {
+              successCount: jobResponses.filter((j) => j.success).length,
+              failureCount: jobResponses.filter((j) => !j.success).length,
+              totalJobs: jobResponses.length,
+            });
 
             return {
               success: true,
@@ -376,90 +751,58 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
               "Error generating detailed architecture:",
               architectureError
             );
+
+            // Log the architecture error
+            this.addLogEntry(
+              "sync",
+              "architecture",
+              "error",
+              architectureError instanceof Error
+                ? architectureError.message
+                : String(architectureError)
+            );
+
             // Attempt to log the raw content if available in the error details
-            if (architectureError.cause?.value) {
+            const rawResponse = (architectureError as any).cause?.error
+              ?.response?.choices?.[0]?.message?.content;
+            if (rawResponse) {
               console.error(
                 "Raw response causing validation error:",
+                rawResponse
+              );
+              this.addLogEntry("sync", "architecture", "rawError", rawResponse);
+            } else if (architectureError.cause?.value) {
+              // Fallback for other potential error structures
+              console.error(
+                "Raw response causing validation error (fallback):",
                 JSON.stringify(architectureError.cause.value, null, 2)
               );
-
-              // Try to extract required fields from failed response
-              try {
-                const failedValue = architectureError.cause.value;
-                if (failedValue && typeof failedValue === "object") {
-                  console.log("Attempting to recover from validation error...");
-
-                  // Check which required fields are missing
-                  if (failedValue.name && Array.isArray(failedValue.files)) {
-                    console.log(
-                      "Basic directory structure found, checking for missing subDirectories"
-                    );
-
-                    // If the object has the structure but is missing subDirectories, add it
-                    if (!failedValue.subDirectories) {
-                      console.log("Adding missing subDirectories array");
-                      failedValue.subDirectories = [];
-
-                      // Try processing with the fixed structure
-                      const jobPromises: Promise<JobResponse>[] = [];
-
-                      // Process each file in the root directory
-                      for (const file of failedValue.files) {
-                        // Ensure functionParams is set to null if undefined
-                        if (file.functionsWithin) {
-                          file.functionsWithin = file.functionsWithin.map(
-                            (func: any) => ({
-                              ...func,
-                              functionParams: func.functionParams ?? null,
-                            })
-                          );
-                        } else {
-                          file.functionsWithin = [];
-                        }
-
-                        const filePath = file.name;
-                        console.log(
-                          `Recovered file: ${filePath}, fileContext: ${JSON.stringify(
-                            file,
-                            null,
-                            2
-                          )}, agentId: ${agentId}`
-                        );
-                        const jobPromise = this.callAsyncTool(
-                          {
-                            fileContext: file,
-                            relativeFilePath: filePath,
-                          },
-                          agentId
-                        );
-                        jobPromises.push(jobPromise);
-                      }
-
-                      // Await all job promises
-                      const jobResponses = await Promise.all(jobPromises);
-
-                      return {
-                        success: true,
-                        data: `Your code generation has been queued for ${jobResponses.length} files in the project. Note: Recovery mode was used due to schema validation issues. Files will be automatically saved to disk when generated. You will be notified when each file is ready.`,
-                        type: "markdown",
-                      };
-                    }
-                  }
-                }
-              } catch (recoveryError) {
-                console.error("Error during recovery attempt:", recoveryError);
-              }
+              this.addLogEntry(
+                "sync",
+                "architecture",
+                "rawErrorFallback",
+                architectureError.cause.value
+              );
             }
-            throw new Error(
-              `Failed to generate detailed architecture: ${
+            return {
+              success: false,
+              type: "markdown",
+              data: `Error generating detailed architecture: ${
                 architectureError instanceof Error
                   ? architectureError.message
                   : String(architectureError)
-              }`
-            );
+              }`,
+            };
           }
         } catch (error) {
           console.error("Error submitting write code job:", error);
+          // Log the top-level error
+          this.addLogEntry(
+            "sync",
+            "general",
+            "error",
+            error instanceof Error ? error.message : String(error)
+          );
           throw new Error(
             `Failed to process write code request: ${
               error instanceof Error ? error.message : String(error)

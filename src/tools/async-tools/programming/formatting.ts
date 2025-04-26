@@ -1,149 +1,44 @@
-export class FullFileContext {
-  readonly relativeFilePath: string;
-  readonly fileDescription?: string;
-  readonly fileType: string;
-  readonly fileContent: string;
+export const getProgrammingSystemPrompt =
+  () => `You are an expert software engineer, who is tasked with writing code for just a single file that is part of a larger code base.
 
-  constructor(
-    relativeFilePath: string,
-    fileType: string,
-    fileContent: string,
-    fileDescription?: string
-  ) {
-    this.fileDescription = fileDescription;
-    this.fileType = fileType;
-    this.fileContent = fileContent;
-    this.relativeFilePath = relativeFilePath;
-  }
+<ProjectDetails>
+- The project is a single page application, built with React, Next.js, and Tailwind CSS 4.0
+- The project uses the shadcn/ui library for components
+- The project uses the supabase database for storage and authentication
+</ProjectDetails>
 
-  format(withCode: boolean = true, withDescription: boolean = true) {
-    return `
-<File relativeFilePath=${this.relativeFilePath}>
-    ${
-      withDescription
-        ? `<Description>\n${this.fileDescription}\n</Description>`
-        : ""
-    }
-    ${withCode ? `<Code>\n${this.fileContent}\n</Code>` : ""}
-</File>`;
-  }
-}
+<PreexistingConfigurationAndFiles>
+  <ConfigurationFiles>
+  # These configuration files already exist in the application
+    - package.json 
+    - globals.css
+    - tailwind.config.js
+    - postcss.config.js 
+    - next.config.js 
+    - tsconfig.json 
+  </ConfigurationFiles>
 
-export type FunctionContextType = {
-  functionName: string;
-  functionDescription: string;
-  functionParams: Record<string, string> | null;
-  functionReturnType: string;
-};
+  <ExistingFunctionality>
+  # This functionality already exists in the application
+    **Authentication**: @/lib/actions/auth.ts contains a login, signup, signout, and getUser() function.
+    **Database**: The application already has a supabase client. Use the @/utils/supabase/client.ts file to access the supabase client. 
+    **Shadcn/ui**: The application already has a shadcn/ui library installed and configured. Use the @/components/ui folder to access the components.
+  </ExistingFunctionality>
+</PreexistingConfigurationAndFiles>
 
-export class FunctionContext {
-  readonly functionName: string;
-  readonly functionParams: Record<string, string> | null;
-  readonly functionReturnType: string;
-  readonly functionContent: string;
-  readonly functionDescription?: string;
-  readonly relativeFilePath?: string;
+<ExistingCode>
+  # This code ALREADY exists in the application
 
-  constructor(
-    functionName: string,
-    functionParams: Record<string, string> | null,
-    functionReturnType: string,
-    functionContent: string,
-    functionDescription?: string,
-    relativeFilePath?: string
-  ) {
-    this.functionName = functionName;
-    this.functionDescription = functionDescription;
-    this.functionParams = functionParams;
-    this.functionReturnType = functionReturnType;
-    this.functionContent = functionContent;
-    this.relativeFilePath = relativeFilePath;
-  }
+  ## Supabase Database and Authentication
+  **Database**: to access the supabase client, call createClient() and use either the client or server provider from @/utils/supabase/client.ts or @/utils/supabase/server.ts. 
+  **Authentication**: to access the user object, call useUser() from @/utils/supabase/auth.ts
+  **Middelware**: Every page other than the home page and /auth pages will be protected by the middleware.
+  **Types**: Database types are in @/types/database.ts, generated from the supabase database schema.
 
-  format(withCode: boolean = true, withDescription: boolean = true) {
-    return `
-<Function name=${this.functionName} fromFile=${this.relativeFilePath}>
-    ${
-      withDescription
-        ? `<Description>\n${this.functionDescription}\n</Description>`
-        : ""
-    }
-    <Params>
-        ${Object.entries(this.functionParams || {})
-          .map(([key, value]) => `${key}: ${value}`)
-          .join("\n")}
-    </Params>
-    <Returns>
-        ${JSON.stringify(this.functionReturnType)}
-    </Returns>
-    ${withCode ? `<Code>\n${this.functionContent}\n</Code>` : ""}
-</Function>`;
-  }
-}
+  ## Shadcn/ui
+  **Components**: Use shadcn/ui components to build the application. They will already be installed and configured in the @/components/ui folder.
+</ExistingCode>
 
-export class ClassContext {
-  readonly className: string;
-  readonly classDescription?: string;
-  readonly classContent: string;
-  readonly classMethods: FunctionContext[];
-  constructor(
-    className: string,
-    classContent: string,
-    classDescription?: string,
-    classMethods: FunctionContext[] = []
-  ) {
-    this.className = className;
-    this.classDescription = classDescription;
-    this.classContent = classContent;
-    this.classMethods = classMethods;
-  }
-
-  format(withDescription: boolean = true) {
-    return `
-<Class:${this.className}>
-    ${
-      withDescription
-        ? `<Description>\n${this.classDescription}\n</Description>`
-        : ""
-    }
-    <Code>
-        ${this.classContent}
-    </Code>
-</Class:${this.className}>`;
-  }
-}
-
-export type CodingContext = FullFileContext | FunctionContext | ClassContext;
-
-export const formatContext = (context: CodingContext[]): string => {
-  return context.map((c) => c.format()).join("\n");
-};
-
-export const getProgrammingSystemPrompt = (keyInformation: string[]) => `
-You are an expert software engineer, who is tasked with writing code for just a single file.
 
 You will be given a description of the overall architecture of the code base, as well as a list of functions and classes that need to be written. Return the code for the file, and nothing else.
-
-Key information:
-${keyInformation.map((k) => `- ${k}`).join("\n")}
 `;
-
-/*
-
-The goal: Get it so that with one command, you can build an entire code base in 30 seconds
-
-Coding agent tells claude sub-agent to program a file.
-1. Passes it extremely detailed instructions
-    - Other architecture that's being built
-    - The functions from other files that it interacts with
-    // - The classes from other files it interacts with // todo: let's deal with this later
-    - File name
-    - File type
-    - Overall description
-    - Functions it needs to include
-        - Name
-        - Description
-        - Params
-        - Return object
-
-*/

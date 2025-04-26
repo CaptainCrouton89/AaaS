@@ -1,1 +1,6 @@
 - In context, it needs to see what tools are in use/available
+- In context it needs to show tasks that need to be done
+- Programmer agents need to iterate on lint/broken
+- Give each programming agent global functions it can call to make stuff work
+  - Supabase auth providers
+  - Create client

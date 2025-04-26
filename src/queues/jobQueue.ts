@@ -63,7 +63,7 @@ jobQueue.process(5, async (job) => {
     }
 
     // Ping the agent webhook with the result
-    const webhookUrl = `${process.env.URL}/api/agents/${agentId}/webhook/${path}/${job.id}`;
+    const webhookUrl = `${process.env.API_BASE_URL}/api/agents/${agentId}/webhook/${path}/${job.id}`;
 
     try {
       const response = await axios.post(webhookUrl, {
@@ -104,7 +104,7 @@ jobQueue.process(5, async (job) => {
       }
 
       console.error(
-        `Webhook notification failed: ${
+        `Webhook notification to URL[${webhookUrl}] failed: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
