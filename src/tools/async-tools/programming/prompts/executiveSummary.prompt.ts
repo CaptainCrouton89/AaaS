@@ -66,15 +66,15 @@ Your task is to write an executive summary of the project. You need to take proj
   ## XML Directory Structure
   [A detailed breakdown of the project's directory structure in the following format:]
   <Directory name="Directory Name" description="Directory Description">
-    <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
-    <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+    <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+    <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
     <Directory name="Sub Directory Name" description="Sub Directory Description">
-      <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
-      <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+      <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+      <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
     </Directory>
     <Directory name="Sub Directory Name" description="Sub Directory Description">
-      <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
-      <File name="FileName.extension" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+      <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
+      <File name="FileName.ext" description="brief description of the file" deps="Dependency1, Dependency2, etc.">
     </Directory>
   </Directory>
 

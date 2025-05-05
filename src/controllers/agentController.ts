@@ -123,11 +123,6 @@ class AgentController {
       console.log(
         `[chatWithAgent] Received chat request for agent: ${agentId}`
       );
-      console.log(
-        `[chatWithAgent] Request body:`,
-        JSON.stringify(req.body, null, 2)
-      );
-
       if (!this.validateAgentId(agentId, res)) return res;
       if (!this.validateChatMessage(message, res)) return res;
 

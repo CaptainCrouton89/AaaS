@@ -29,13 +29,16 @@ const jobQueue = new Queue<JobData>("agent-job-queue", {
 });
 
 // Process jobs
-jobQueue.process(5, async (job) => {
+jobQueue.process(20, async (job) => {
   try {
     job.progress(0);
     const { toolName, args, agentId, path } = job.data;
 
     console.log(`Processing job ${job.id} for tool: ${toolName}`);
-    console.log(`Tool arguments:`, args);
+    console.log(
+      `Tool arguments:`,
+      truncateText(JSON.stringify(args), { length: 100 })
+    );
 
     const agent = await agentService.getAgentById(agentId);
 
@@ -50,7 +53,10 @@ jobQueue.process(5, async (job) => {
     if (toolResult.success) {
       console.log(`Tool '${toolName}' executed successfully`);
     } else {
-      console.error(`Tool '${toolName}' execution failed:`, toolResult.data);
+      console.error(
+        `Tool '${toolName}' execution failed:`,
+        truncateText(JSON.stringify(toolResult.data), { length: 100 })
+      );
     }
 
     if (!agentId && !path) {
@@ -120,7 +126,10 @@ jobQueue.process(5, async (job) => {
       };
     }
   } catch (error) {
-    console.error(`Job ${job.id} failed:`, error);
+    console.error(
+      `Job ${job.id} failed:`,
+      truncateText(JSON.stringify(error), { length: 100 })
+    );
     throw error;
   }
 });
@@ -134,7 +143,10 @@ jobQueue.on("completed", (job, result) => {
 });
 
 jobQueue.on("failed", (job, error) => {
-  console.error(`Job ${job.id} has failed with error:`, error);
+  console.error(
+    `Job ${job.id} has failed with error:`,
+    truncateText(JSON.stringify(error), { length: 100 })
+  );
 });
 
 jobQueue.on("progress", (job, progress) => {

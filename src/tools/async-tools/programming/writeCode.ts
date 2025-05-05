@@ -1,14 +1,14 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { generateText, tool } from "ai";
+import { generateObject, generateText, tool } from "ai";
 import * as fs from "fs";
 import * as path from "path";
 import { z } from "zod";
+import { functionWithExponentialBackoff } from "../../../lib/utils";
 import { Agent } from "../../../types/database";
 import { JobResponse } from "../../utils";
-import { BaseAsyncJobTool, ToolResult, toolRegistry } from "../baseTool";
-import { getProgrammingSystemPrompt } from "./formatting";
-import { PathRegistry, Registry } from "./pathRegistry";
+import { BaseAsyncJobTool, toolRegistry, ToolResult } from "../baseTool";
+import { PathRegistry, registerDirectories, Registry } from "./PathRegistry";
 import {
   getDetailedFileStructureSystemPrompt,
   getDetailedFileStructureUserPrompt,
@@ -17,17 +17,14 @@ import {
   getExecutiveSummarySystemPrompt,
   getExecutiveSummaryUserPrompt,
 } from "./prompts/executiveSummary.prompt";
-import { Directory, File } from "./types";
-
+import { getProgrammingSystemPrompt } from "./prompts/programming.system.prompt";
+import { Directory, DirectorySchema, File } from "./types";
 // Type for ScrapeTool arguments
 type WriteCodeToolArgs = {
-  executiveSummary: string;
-  fileContext: File;
+  systemPrompt: string;
+  codePrompt: string;
   relativeFilePath: string;
-  pathRegistry: Registry;
 };
-
-interface WriteCodeResponseData {}
 
 // Log entry interface
 interface LogEntry {
@@ -199,7 +196,8 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
    */
   private saveCodeToFile(
     filePath: string,
-    code: string
+    code: string,
+    context: string
   ): { success: boolean; error?: string } {
     try {
       // Normalize the file path
@@ -209,10 +207,16 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
       const dirPath = path.dirname(normalizedPath);
 
       // Ensure the directory exists
+
       this.ensureDirectoryExists(dirPath);
 
+      const fileContent = `/*
+${context}
+*/
+${code}`;
+
       // Write the file
-      fs.writeFileSync(normalizedPath, code, "utf8");
+      fs.writeFileSync(normalizedPath, fileContent, "utf8");
 
       return { success: true };
     } catch (error) {
@@ -223,52 +227,87 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
     }
   }
 
+  queueDirectoryForCodeCreation = (
+    executiveSummary: string,
+    pathRegistry: PathRegistry,
+    agentId: string,
+    jobPromises: Promise<JobResponse>[],
+    dir: Directory,
+    rootPath: string,
+    path = ""
+  ) => {
+    // Process each file in this directory
+    if (dir.files) {
+      for (const file of dir.files) {
+        const filePath = path ? `${path}/${file.name}` : file.name;
+        console.log(
+          `filePath: ${filePath}, fileContext: ${file}, agentId: ${agentId}`
+        );
+
+        // Log each file being queued for processing
+        this.addLogEntry("sync", "queueing", "file", {
+          filePath,
+          fileContext: file,
+        });
+
+        const prompt = this.getPrompt(
+          executiveSummary,
+          file,
+          pathRegistry.getRegistry(),
+          rootPath,
+          filePath
+        );
+
+        const jobPromise = this.callAsyncTool(
+          {
+            systemPrompt: getProgrammingSystemPrompt(executiveSummary),
+            codePrompt: prompt,
+            relativeFilePath: filePath,
+          },
+          agentId
+        );
+        jobPromises.push(jobPromise);
+      }
+    }
+    if (dir.subDirectories) {
+      for (const subDir of dir.subDirectories) {
+        const subPath = path ? `${path}/${subDir.name}` : subDir.name;
+        this.queueDirectoryForCodeCreation(
+          executiveSummary,
+          pathRegistry,
+          agentId,
+          jobPromises,
+          subDir,
+          rootPath,
+          subPath
+        );
+      }
+    }
+  };
+
   async execute(
     agent: Agent,
-    {
-      executiveSummary,
-      fileContext,
-      relativeFilePath,
-      pathRegistry,
-    }: WriteCodeToolArgs
+    { relativeFilePath, codePrompt, systemPrompt }: WriteCodeToolArgs
   ): Promise<ToolResult> {
-    console.log(
-      `writeCodeTool executing for file context: ${JSON.stringify(
-        fileContext,
-        null,
-        2
-      )}`
-    );
-
-    const importedPathRegistry = new PathRegistry(pathRegistry);
-
-    const context = importedPathRegistry.formatContextFromImports(
-      fileContext.imports
-    );
-
-    const prompt = `
-        ${executiveSummary}
-
-        Relevant file context:
-        ${context}
-
-        Write the code for the file ${relativeFilePath} with the following specifications:
-        ${fileContext}
-        
-        Return only the raw code, no other text.`;
-
     // Log the input for code generation
     this.addLogEntry("async", "writeCode", "input", {
-      system: getProgrammingSystemPrompt(),
-      user: prompt,
+      system: systemPrompt,
+      user: codePrompt,
     });
 
     try {
-      const codeResult = await generateText({
-        model: anthropic("claude-3-7-sonnet-20250219"),
-        system: getProgrammingSystemPrompt(),
-        prompt,
-      });
+      const codeResult = await functionWithExponentialBackoff(
+        async () =>
+          generateText({
+            model: anthropic("claude-3-7-sonnet-20250219"),
+            temperature: 0,
+            maxRetries: 1,
+            system: systemPrompt,
+            prompt: codePrompt,
+          }),
+        10,
+        5000
+      );
 
       let codeContent = codeResult.text.trim();
       // Strip markdown code block fences if present
@@ -298,7 +337,11 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
 
       // Save the generated code to a file
       const absoluteFilePath = path.resolve(agent.cwd, relativeFilePath);
-      const saveResult = this.saveCodeToFile(absoluteFilePath, codeContent);
+      const saveResult = this.saveCodeToFile(
+        absoluteFilePath,
+        codeContent,
+        `Relative file path: ${relativeFilePath}\n\n${codePrompt}`
+      );
 
       if (!saveResult.success) {
         // Log the save error
@@ -320,7 +363,6 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
         success: true,
         type: "json",
         data: {
-          code: codeContent,
           filePath: absoluteFilePath,
           saved: true,
         },
@@ -346,6 +388,80 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
     }
   }
 
+  private getPrompt(
+    executiveSummary: string,
+    fileContext: File,
+    pathRegistry: Registry,
+    rootPath: string,
+    relativeFilePath: string
+  ) {
+    const importedPathRegistry = new PathRegistry(pathRegistry);
+
+    const importFileContext = fileContext.imports
+      ? importedPathRegistry
+          .formatContextFromImports(fileContext.imports, rootPath)
+          .map(({ path, context }) => `${path}: ${context}`)
+          .join("\n")
+      : "";
+
+    const importContext = fileContext.imports
+      ?.map(({ filePathFromRoot }) => `- ${filePathFromRoot}`)
+      .join("\n");
+
+    const exportContext = fileContext.exports
+      ?.map((exportItem) => {
+        if (exportItem.type === "function") {
+          return `<Function name="${exportItem.name}" description="${
+            exportItem.description
+          }">\n${
+            exportItem.params
+              ? `Parameters:\n${JSON.stringify(exportItem.params, null, 2)}\n`
+              : ""
+          }\nReturn type: ${exportItem.returnType}\n</Function>`;
+        } else if (exportItem.type === "type") {
+          return `<Type name="${exportItem.name}" description="${
+            exportItem.description
+          }">\nProperties:\n${JSON.stringify(
+            exportItem.properties,
+            null,
+            2
+          )}\n</Type>`;
+        } else if (exportItem.type === "component") {
+          return `<Component name="${exportItem.name}" description="${
+            exportItem.description
+          }">\n${
+            exportItem.params
+              ? `Parameters:\n${JSON.stringify(exportItem.params, null, 2)}`
+              : ""
+          }\n${
+            exportItem.properties
+              ? `Properties:\n${JSON.stringify(exportItem.properties, null, 2)}`
+              : ""
+          }\nExported as default export.\n</Component>`;
+        } else if (exportItem.type === "class") {
+          return `<Class name="${exportItem.name}" description="${exportItem.description}">\n</Class>`;
+        }
+      })
+      .join("\n");
+
+    const prompt = `Relevant file context:
+${importFileContext}
+
+Write the code for the file ${relativeFilePath} with the following specifications:
+${fileContext.name}: ${fileContext.description}
+Imports: 
+${importContext}
+Exports: 
+${exportContext}
+
+Instructions:
+- Return only the raw code, no other text.
+- Do not use imports from other files that are not listed in the imports section.
+`;
+
+    return prompt;
+  }
+
   getSynchronousTool(agentId: string) {
     return tool({
       description: this.description,
@@ -358,11 +474,6 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
         try {
           // Start a new log run for this execution
           this.startNewRun();
-
-          console.log(
-            "Starting writeCodeTool execution with project description:",
-            projectDescription
-          );
 
           // Log the inputs for executive summary
           const executiveSummaryInput = {
@@ -405,11 +516,6 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
             executiveSummary.text
           );
 
-          console.log(
-            "Executive summary generated successfully:",
-            executiveSummary.text
-          );
-
           try {
             console.log("Generating detailed architecture...");
             console.log(
@@ -430,10 +536,11 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
               user: architectureUserPrompt,
             });
 
-            const architectureTextResult = await generateText({
-              model: openai("gpt-4o"),
+            const architectureObjectResult = await generateObject({
+              model: openai("gpt-4.1"),
               system: architectureSystemPrompt,
               prompt: architectureUserPrompt,
+              schema: DirectorySchema,
             });
 
             // Log the raw architecture output
@@ -441,290 +548,61 @@ export class WriteCodeTool extends BaseAsyncJobTool<WriteCodeToolArgs> {
               "sync",
               "architecture",
               "output",
-              architectureTextResult.text
+              architectureObjectResult.object
             );
-
-            console.log(
-              "Text generation complete, attempting to parse as JSON"
-            );
-            let architectureObject;
-            try {
-              // Try to parse the text as JSON
-              architectureObject = JSON.parse(architectureTextResult.text);
-              console.log("Successfully parsed architecture JSON");
-              // Log the parsed JSON
-              this.addLogEntry(
-                "sync",
-                "architecture",
-                "parsed",
-                architectureObject
-              );
-            } catch (parseError) {
-              console.error(
-                "Failed to parse architecture as JSON:",
-                parseError
-              );
-
-              // Log the parse error
-              this.addLogEntry("sync", "architecture", "parseError", {
-                error:
-                  parseError instanceof Error
-                    ? parseError.message
-                    : String(parseError),
-                rawText: architectureTextResult.text,
-              });
-
-              // Log the raw text
-              console.error("Raw response text:");
-              console.error(architectureTextResult.text);
-
-              // Try to extract JSON from the response using regex
-              try {
-                const jsonMatch =
-                  architectureTextResult.text.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                  console.log(
-                    "Found potential JSON in the response, attempting to parse"
-                  );
-                  architectureObject = JSON.parse(jsonMatch[0]);
-                  console.log("Successfully parsed extracted JSON");
-                  // Log the extracted JSON
-                  this.addLogEntry(
-                    "sync",
-                    "architecture",
-                    "extractedParsed",
-                    architectureObject
-                  );
-                } else {
-                  this.addLogEntry(
-                    "sync",
-                    "architecture",
-                    "extractError",
-                    "No JSON object found in response"
-                  );
-                  throw new Error("No JSON object found in response");
-                }
-              } catch (extractError) {
-                console.error(
-                  "Failed to extract and parse JSON:",
-                  extractError
-                );
-                this.addLogEntry(
-                  "sync",
-                  "architecture",
-                  "extractError",
-                  extractError instanceof Error
-                    ? extractError.message
-                    : String(extractError)
-                );
-                throw new Error("Could not parse architecture from response");
-              }
-            }
-
-            console.log(
-              "Detailed architecture generated successfully:",
-              JSON.stringify(architectureObject, null, 2)
-            );
-
-            const pathRegistry = new PathRegistry({});
 
             // Register all directories in the architecture to the registry
-            const registerDirectories = (dir: Directory, path = "") => {
-              const currentPath = path ? `${path}/${dir.name}` : dir.name;
-              console.log(`Registering directory: ${currentPath}`);
-              pathRegistry.registerPath(currentPath, dir);
+            const pathRegistry = new PathRegistry({});
 
-              for (const file of dir.files) {
-                console.log(`Registering file: ${currentPath}/${file.name}`);
-                pathRegistry.registerPath(`${currentPath}/${file.name}`, file);
-              }
+            registerDirectories(architectureObjectResult.object, pathRegistry);
 
-              for (const subDir of dir.subDirectories) {
-                console.log(
-                  `Processing subdirectory: ${subDir.name} in ${currentPath}`
-                );
-                registerDirectories(subDir, currentPath);
-              }
-            };
-
-            // Use a safe conversion function to handle potential object structure issues
-            const convertToValidDirectory = (obj: any): Directory => {
-              console.log(
-                `Converting object to Directory: ${obj?.name || "unnamed"}`
-              );
-              if (!obj) {
-                console.error("Received null/undefined object to convert");
-                this.addLogEntry(
-                  "sync",
-                  "architecture",
-                  "conversionError",
-                  "Received null/undefined object to convert"
-                );
-                return { name: "root", files: [], subDirectories: [] };
-              }
-
-              const dir: Directory = {
-                name: obj.name || "root",
-                files: [],
-                subDirectories: [],
-              };
-
-              // Copy files if they exist
-              if (Array.isArray(obj.files)) {
-                console.log(
-                  `Converting ${obj.files.length} files in ${dir.name}`
-                );
-                dir.files = obj.files.map((f: any) => ({
-                  name: f.name || "untitled",
-                  description: f.description || "",
-                  imports: Array.isArray(f.imports) ? f.imports : [],
-                  exports: Array.isArray(f.exports) ? f.exports : [],
-                }));
-              } else {
-                console.warn(
-                  `No files array in ${
-                    dir.name
-                  } or invalid format: ${typeof obj.files}`
-                );
-                this.addLogEntry(
-                  "sync",
-                  "architecture",
-                  "warning",
-                  `No files array in ${
-                    dir.name
-                  } or invalid format: ${typeof obj.files}`
-                );
-              }
-
-              // Process subdirectories
-              if (Array.isArray(obj.subDirectories)) {
-                console.log(
-                  `Processing ${obj.subDirectories.length} subdirectories in ${dir.name}`
-                );
-                // Use a try/catch for each subdirectory to prevent a single bad one from breaking everything
-                const validSubDirs: Directory[] = [];
-                for (const subDir of obj.subDirectories) {
-                  if (!subDir || typeof subDir !== "object") {
-                    console.warn(
-                      `Skipping invalid subdirectory entry: ${typeof subDir}`
-                    );
-                    this.addLogEntry(
-                      "sync",
-                      "architecture",
-                      "warning",
-                      `Skipping invalid subdirectory entry: ${typeof subDir}`
-                    );
-                    continue;
-                  }
-                  try {
-                    const convertedSubDir = convertToValidDirectory(subDir);
-                    validSubDirs.push(convertedSubDir);
-                  } catch (error) {
-                    console.error(
-                      `Error converting subdirectory ${
-                        subDir?.name || "unnamed"
-                      } in ${dir.name}:`,
-                      error
-                    );
-                    this.addLogEntry(
-                      "sync",
-                      "architecture",
-                      "error",
-                      `Error converting subdirectory ${
-                        subDir?.name || "unnamed"
-                      } in ${dir.name}: ${
-                        error instanceof Error ? error.message : String(error)
-                      }`
-                    );
-                    // Don't add it to the valid ones
-                  }
-                }
-                dir.subDirectories = validSubDirs;
-              } else {
-                console.warn(
-                  `No subDirectories array in ${
-                    dir.name
-                  } or invalid format: ${typeof obj.subDirectories}`
-                );
-                this.addLogEntry(
-                  "sync",
-                  "architecture",
-                  "warning",
-                  `No subDirectories array in ${
-                    dir.name
-                  } or invalid format: ${typeof obj.subDirectories}`
-                );
-              }
-
-              console.log(
-                `Conversion complete for ${dir.name} with ${dir.files.length} files and ${dir.subDirectories.length} subdirectories`
-              );
-              return dir;
-            };
-
-            // Convert and register
             console.log(
-              "Starting conversion of architectureObject to valid Directory structure"
+              "pathRegistry.getRegistry()",
+              pathRegistry.getRegistry()
             );
-            console.log(
-              "Raw architectureObject structure:",
-              JSON.stringify(
-                typeof architectureObject === "object"
-                  ? Object.keys(architectureObject || {})
-                  : typeof architectureObject,
-                null,
-                2
-              )
-            );
-            const validDirStructure =
-              convertToValidDirectory(architectureObject);
-            console.log(
-              "Conversion completed, starting directory registration"
-            );
-            registerDirectories(validDirStructure, "");
 
             console.log("All directories registered in the path registry");
-            this.addLogEntry("sync", "pathRegistry", "complete", {
-              totalPaths: Object.keys(pathRegistry.getRegistry()).length,
-            });
+            this.addLogEntry(
+              "sync",
+              "pathRegistry",
+              "complete",
+              pathRegistry.getRegistry()
+            );
 
             // Process all files in the architecture
             const jobPromises: Promise<JobResponse>[] = [];
-            const processDirectory = (dir: Directory, path = "") => {
-              // Process each file in this directory
-              for (const file of dir.files) {
-                const filePath = path ? `${path}/${file.name}` : file.name;
-                console.log(
-                  `filePath: ${filePath}, fileContext: ${file}, agentId: ${agentId}`
-                );
 
-                // Log each file being queued for processing
-                this.addLogEntry("sync", "queueing", "file", {
-                  filePath,
-                  fileContext: file,
-                });
+            console.log("queueing directory for code creation");
+            console.log(
+              "architectureObjectResult.object",
+              JSON.stringify(architectureObjectResult.object, null, 2)
+            );
 
-                const jobPromise = this.callAsyncTool(
-                  {
-                    executiveSummary: executiveSummary.text,
-                    fileContext: file,
-                    relativeFilePath: filePath,
-                    pathRegistry: pathRegistry.getRegistry(),
-                  },
-                  agentId
-                );
-                jobPromises.push(jobPromise);
-              }
+            const dbPrompt = `
+            With this context, write the code for the file init-db.sql.
+            ${JSON.stringify(architectureObjectResult.object, null, 2)}
+            `;
 
-              // Process subdirectories recursively
-              for (const subDir of dir.subDirectories) {
-                const subPath = path ? `${path}/${subDir.name}` : subDir.name;
-                processDirectory(subDir, subPath);
-              }
-            };
+            const jobPromise = this.callAsyncTool(
+              {
+                systemPrompt: getProgrammingSystemPrompt(executiveSummary.text),
+                codePrompt: dbPrompt,
+                relativeFilePath: "init-db.sql",
+              },
+              agentId
+            );
+
+            jobPromises.push(jobPromise);
 
             // Start processing from the root directory
-            processDirectory(validDirStructure);
+            this.queueDirectoryForCodeCreation(
+              executiveSummary.text,
+              pathRegistry,
+              agentId,
+              jobPromises,
+              architectureObjectResult.object,
+              architectureObjectResult.object.name
+            );
 
             // Log the total number of jobs queued
             this.addLogEntry("sync", "queueing", "complete", {

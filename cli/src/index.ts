@@ -8,6 +8,19 @@ import MarkdownIt from "markdown-it";
 import { stdin as input, stdout as output } from "process";
 import * as readline from "readline/promises";
 
+// Function to decode HTML entities
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&nbsp;/g, " ");
+}
+
 const md = new MarkdownIt();
 const program = new Command();
 
@@ -152,6 +165,18 @@ async function sendMessage(
     const response = await axios.post(`${baseUrl}/api/agents/${agentId}/chat`, {
       message,
     });
+
+    // If response.data is a string with HTML entities, try to decode and parse it
+    if (typeof response.data === "string" && response.data.includes("&quot;")) {
+      try {
+        const decodedData = decodeHtmlEntities(response.data);
+        return JSON.parse(decodedData);
+      } catch (e) {
+        // If parsing fails, return the decoded string
+        return decodeHtmlEntities(response.data);
+      }
+    }
+
     return response.data;
   } catch (error: any) {
     if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
@@ -178,16 +203,61 @@ function displayAgentResponse(responseData: any, verbose: boolean = false) {
     return;
   }
 
+  // Check if the input is a string that contains HTML entities
+  if (typeof responseData === "string" && responseData.includes("&quot;")) {
+    try {
+      // Try to parse it as JSON
+      const jsonObj = JSON.parse(decodeHtmlEntities(responseData));
+      responseData = jsonObj;
+    } catch (e) {
+      // If it's not valid JSON, just decode the HTML entities
+      responseData = decodeHtmlEntities(responseData);
+    }
+  }
+
   // Extract the response message
-  const agentResponse =
-    typeof responseData === "object" && responseData.reply
-      ? responseData.reply
-      : JSON.stringify(responseData);
+  let agentResponse;
+  let isJsonResponse = false;
+  let usageData = null;
+
+  if (typeof responseData === "object") {
+    // Save usage data if available
+    if (responseData.usage) {
+      usageData = responseData.usage;
+    } else if (responseData.tokenUsage) {
+      usageData = responseData.tokenUsage;
+    }
+
+    if (responseData.reply) {
+      agentResponse = responseData.reply;
+    } else if (responseData.response) {
+      // Handle case where response is in the "response" field
+      agentResponse = decodeHtmlEntities(responseData.response);
+    } else {
+      // For JSON responses, extract the main content parts
+      isJsonResponse = true;
+
+      // Create a clean representation of the response
+      if (responseData.response) {
+        agentResponse = decodeHtmlEntities(responseData.response);
+      } else {
+        // Create a clean copy of the object without usage data for display
+        const displayObject = { ...responseData };
+        delete displayObject.usage;
+        delete displayObject.tokenUsage;
+
+        // Convert to a nicely formatted string
+        const jsonString = JSON.stringify(displayObject, null, 2);
+        agentResponse = decodeHtmlEntities(jsonString);
+      }
+    }
+  } else {
+    agentResponse = responseData;
+  }
 
   // Display token usage in verbose mode
-  if (verbose && responseData.tokenUsage) {
-    const { promptTokens, completionTokens, totalTokens } =
-      responseData.tokenUsage;
+  if (verbose && usageData) {
+    const { promptTokens, completionTokens, totalTokens } = usageData;
     console.log(chalk.yellow("\n--- Token Usage ---"));
     console.log(chalk.yellow(`Prompt tokens: ${promptTokens}`));
     console.log(chalk.yellow(`Completion tokens: ${completionTokens}`));
@@ -195,30 +265,40 @@ function displayAgentResponse(responseData: any, verbose: boolean = false) {
     console.log(chalk.yellow("------------------\n"));
   }
 
-  // Display the formatted response
-  console.log(chalk.green("\nAgent Response:"));
+  // Display the formatted response without the "Agent Response:" heading
+  if (isJsonResponse) {
+    // For JSON objects with a response field, just show the response content
+    if (typeof responseData === "object" && responseData.response) {
+      console.log(
+        chalk.green("\n" + decodeHtmlEntities(responseData.response))
+      );
+    } else {
+      // Just print the JSON content without the markdown processing
+      console.log(agentResponse);
+    }
+  } else {
+    try {
+      // Render markdown to HTML-like text representation
+      const formattedResponse = md.render(agentResponse);
 
-  try {
-    // Render markdown to HTML-like text representation
-    const formattedResponse = md.render(agentResponse);
+      // For terminal display, we'll do a basic cleanup of HTML tags
+      // A more sophisticated approach could use a package like terminal-link
+      const cleanedResponse = formattedResponse
+        .replace(/<\/?p>/g, "\n")
+        .replace(/<\/?code>/g, "`")
+        .replace(/<\/?strong>/g, "**")
+        .replace(/<\/?em>/g, "_")
+        .replace(/<\/?h[1-6]>/g, "\n")
+        .replace(/<br\/?>/g, "\n")
+        .replace(/<li>/g, "• ")
+        .replace(/<\/li>/g, "\n")
+        .replace(/<\/?[^>]+(>|$)/g, ""); // Remove any remaining HTML tags
 
-    // For terminal display, we'll do a basic cleanup of HTML tags
-    // A more sophisticated approach could use a package like terminal-link
-    const cleanedResponse = formattedResponse
-      .replace(/<\/?p>/g, "\n")
-      .replace(/<\/?code>/g, "`")
-      .replace(/<\/?strong>/g, "**")
-      .replace(/<\/?em>/g, "_")
-      .replace(/<\/?h[1-6]>/g, "\n")
-      .replace(/<br\/?>/g, "\n")
-      .replace(/<li>/g, "• ")
-      .replace(/<\/li>/g, "\n")
-      .replace(/<\/?[^>]+(>|$)/g, ""); // Remove any remaining HTML tags
-
-    console.log(cleanedResponse);
-  } catch (error) {
-    // Fallback to plain text if markdown rendering fails
-    console.log(agentResponse);
+      console.log(chalk.green("\n" + cleanedResponse));
+    } catch (error) {
+      // Fallback to plain text if markdown rendering fails
+      console.log(chalk.green("\n" + agentResponse));
+    }
   }
 }
 

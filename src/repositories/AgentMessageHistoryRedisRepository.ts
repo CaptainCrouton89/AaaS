@@ -79,10 +79,6 @@ export class AgentMessageHistoryRedisRepository {
   ): Promise<boolean> {
     try {
       const existingMessages = await this.getMessagesByAgentId(agentId);
-      console.warn(
-        "existingMessages",
-        JSON.stringify(existingMessages, null, 2)
-      );
       const updatedMessages = [...existingMessages, ...messages];
       return await this.storeMessages(agentId, updatedMessages);
     } catch (error) {

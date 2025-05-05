@@ -5,6 +5,7 @@ import {
   getInitializationPrompt,
 } from "../lib/prompts/agent.prompt";
 import { getBaseSystemPrompt } from "../lib/prompts/baseAgent.system.prompt";
+import { functionWithExponentialBackoff, truncateText } from "../lib/utils";
 import { agentRepository } from "../repositories";
 import { ToolResult } from "../tools/async-tools/baseTool";
 import { Agent, AgentInsert, AgentWithTasks, Task } from "../types/database";
@@ -104,7 +105,7 @@ export class AgentService {
     console.log(`[chatWithAgent] Processing chat for agent: ${agentId}`);
     console.log(
       `[chatWithAgent] Received message:`,
-      JSON.stringify(message, null, 2)
+      truncateText(JSON.stringify(message, null, 2), { length: 300 })
     );
 
     const agent = await this.getAgentById(agentId);
@@ -116,10 +117,6 @@ export class AgentService {
 
     let existingMessages =
       await agentMessageHistoryService.getMessagesByAgentId(agentId);
-
-    console.log("agent owner", agent.owner);
-
-    console.log("Sending new message", message);
 
     // First store the user message right away
     await agentMessageHistoryService.addMessages(agentId, [message]);
@@ -135,32 +132,42 @@ export class AgentService {
       };
     }
 
+    let messagesForAgent = [...existingMessages, alteredMessage];
+
+    if (messagesForAgent.length > 15) {
+      messagesForAgent = messagesForAgent.slice(messagesForAgent.length - 15);
+    }
+
     try {
       // Generate a complete text response using OpenAI
-      const result = await generateText({
-        model: openai("gpt-4.1-nano"),
-        system: getBaseSystemPrompt(agent),
-        temperature: 0.2,
-        messages: [...existingMessages, alteredMessage],
-        tools: getAgentTools(agent),
-        maxSteps: 500, // Allow multiple steps for tool use
-        onStepFinish: async (step: StepResult<ToolSet>) => {
-          console.log("step finished", JSON.stringify(step, null, 2));
-
-          // Store step messages in history as they become available
-          if (step.response.messages && step.response.messages.length > 0) {
-            // Filter out messages that have already been stored
-            const newMessages = step.response.messages.filter((msg) => {
-              const id = getMessageId(msg);
-              if (!id) return true;
-              if (storedMessageIds.has(id)) return false;
-              storedMessageIds.add(id);
-              return true;
-            });
-            await agentMessageHistoryService.addMessages(agentId, newMessages);
-          }
-        },
-      });
+      const result = await functionWithExponentialBackoff(async () =>
+        generateText({
+          model: openai("gpt-4.1-nano"),
+          maxRetries: 1,
+          system: getBaseSystemPrompt(agent),
+          temperature: 0.1,
+          messages: messagesForAgent,
+          tools: getAgentTools(agent),
+          maxSteps: 500, // Allow multiple steps for tool use
+          onStepFinish: async (step: StepResult<ToolSet>) => {
+            // Store step messages in history as they become available
+            if (step.response.messages && step.response.messages.length > 0) {
+              // Filter out messages that have already been stored
+              const newMessages = step.response.messages.filter((msg) => {
+                const id = getMessageId(msg);
+                if (!id) return true;
+                if (storedMessageIds.has(id)) return false;
+                storedMessageIds.add(id);
+                return true;
+              });
+              await agentMessageHistoryService.addMessages(
+                agentId,
+                newMessages
+              );
+            }
+          },
+        })
+      );
 
       const { text, usage, response } = result;
       console.log(`[chatWithAgent] Usage:`, usage);
