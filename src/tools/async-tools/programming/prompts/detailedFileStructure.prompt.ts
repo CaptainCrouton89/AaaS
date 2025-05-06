@@ -14,6 +14,28 @@ For each file, you must write the following:
 
 You will be given a description of the code base and a directory structure of the code base. Use this information to write the detailed inputs and outputs for every single file in the code base.
 
+<Guidelines>
+
+  <FilesGuidelines>    
+    <ImportsGuidelines>
+      - List only the imports from other files in the codebase.
+      - Do not list imports from outside the codebase.
+      - Do not list imports from the same file.
+    </ImportsGuidelines>
+    <ExportsGuidelines>
+      - List all the exports from the file.
+      - For functions, list the function name, description, parameters, and return type (Use JSON schema for the return type).
+      - For types, list the type name, description, and JSON schema.
+      - For components, list the component name, properties, and description.
+      - For classes, list the class name, properties, and description.
+    </ExportsGuidelines>
+    <SubDirectoriesGuidelines>
+      - List all the subdirectories in the directory.
+      - For each subdirectory, list the name, files, and subdirectories.
+    </SubDirectoriesGuidelines>
+  </FilesGuidelines>
+</Guidelines>
+
 At a high level, the output should look like this:
 
 {
@@ -43,29 +65,7 @@ At a high level, the output should look like this:
       "subDirectories": [...more subdirectories]
     }
   ]
-}
-
-<Guidelines>
-
-  <FilesGuidelines>    
-    <ImportsGuidelines>
-      - List only the imports from other files in the codebase.
-      - Do not list imports from outside the codebase.
-      - Do not list imports from the same file.
-    </ImportsGuidelines>
-    <ExportsGuidelines>
-      - List all the exports from the file.
-      - For functions, list the function name, description, parameters, and return type (Use JSON schema for the return type).
-      - For types, list the type name, description, and JSON schema.
-      - For components, list the component name and description.
-      - For classes, list the class name and methods.
-    </ExportsGuidelines>
-    <SubDirectoriesGuidelines>
-      - List all the subdirectories in the directory.
-      - For each subdirectory, list the name, files, and subdirectories.
-    </SubDirectoriesGuidelines>
-  </FilesGuidelines>
-</Guidelines>`;
+}`;
 
 export const getDetailedFileStructureUserPrompt = (
   executiveSummary: string

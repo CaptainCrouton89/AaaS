@@ -1,9 +1,9 @@
 import { tool } from "ai";
 import axios from "axios";
 import { z } from "zod";
-import { Agent } from "../../types/database";
-import { JobResponse } from "../utils";
-import { BaseAsyncJobTool, ToolResult, toolRegistry } from "./baseTool";
+import { Agent } from "../../../types/database";
+import { JobResponse } from "../../utils";
+import { BaseAsyncJobTool, ToolResult, toolRegistry } from "../baseTool";
 
 // Type for CrawlTool arguments
 type CrawlToolArgs = {

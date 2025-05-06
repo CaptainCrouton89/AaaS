@@ -18,6 +18,7 @@ export const functionWithExponentialBackoff = async <T>(
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
       delay *= 2;
+      console.error(error);
       console.log(`Retrying in ${delay}ms`);
     }
   }

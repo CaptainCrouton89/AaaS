@@ -1,10 +1,11 @@
 import { toolRegistry } from "./baseTool";
 
 // Import all tools to make sure they are registered
-import "./crawlTool";
 import "./deepSearchTool";
 import "./programming";
-import "./scrapeTool";
+import "./scraping/crawlTool";
+import "./scraping/documentationExtractor";
+import "./scraping/scrapeTool";
 import "./waitTool";
 import "./writeReportTool";
 

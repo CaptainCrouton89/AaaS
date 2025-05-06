@@ -33,6 +33,7 @@ import { alariaWikiEditorSystemPrompt } from "./alariaWikiEditor.system.prompt";
 import { programmingSystemTemplate } from "./programmer.system.prompt";
 import { projectManagerTemplate } from "./projectManager.system.prompt";
 import { researchAssistantTemplate } from "./researcher.system.prompt";
+
 export const getAgentTemplate = (agentType: AgentType) => {
   switch (agentType) {
     case AgentType.RESEARCH_ASSISTANT:
@@ -84,6 +85,9 @@ export const getAgentTools = (agent: Agent): ToolSet => {
     case AgentType.RESEARCH_ASSISTANT:
       return {
         ...defaultAgentTools(agent.id),
+        getDocsFromUrls: toolRegistry
+          .getTool("documentationExtractor")!
+          .getSynchronousTool(agent.id),
         deepSearch: toolRegistry
           .getTool("deepSearch")!
           .getSynchronousTool(agent.id),
